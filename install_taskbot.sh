@@ -20,6 +20,7 @@ GH_BRANCH="main" # Or your default branch
 RAW_CONTENT_BASE_URL="https://raw.githubusercontent.com/${GH_REPO_OWNER}/${GH_REPO_NAME}/${GH_BRANCH}"
 
 COMPOSE_FILE="docker-compose.yml"
+NGINX_CONF_OUTPUT="nginx/app.conf" 
 
 INSTALL_DIR="$(pwd)/taskbot_deployment" # Install everything into a subdirectory
 
