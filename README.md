@@ -25,12 +25,18 @@ This framework provides the building blocks for automating complex workflows, en
 *   **Tool Integration:** Extensible system for adding custom tools that agents can use to perform actions.
 *   **LLM Agnostic:** Bring your own LLM – connect to OpenAI, Anthropic, Cohere, or self-hosted open-source models.
 *   **Easy On-Premise Installation:** A simple one-liner shell command to deploy the entire Taskbot stack (including frontend, backend, and necessary services) using Docker.
+*   **Licensed for On-Premise Use:** Requires a license key for full operation in your on-premise environment. [Learn how to obtain a license](https://nucleusenterprise.ai/licenses/).
 *   **Self-Contained Deployment:** Includes a management portal (Next.js frontend) and robust backend services (Java-based).
 
 
 ## 🚀 Quick Start: One-Liner Installation
 
 You can install the entire Nucleus Taskbot Agent stack on your on-premise Linux VM (Ubuntu/Debian recommended) with a single command. This will set up Docker, download the necessary configurations, and start all services.
+
+**Important: License Required**
+A valid license key (`TASKBOT_LICENSE_TOKEN`) is required for the Taskbot services to operate correctly in an on-premise deployment. You will be prompted to enter this key during the installation process.
+*   **To obtain a license key, please visit: [https://nucleusenterprise.ai/licenses/](https://nucleusenterprise.ai/licenses/)**
+
 
 **Prerequisites:**
 *   A Linux VM (Ubuntu/Debian-like) with internet access.
