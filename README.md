@@ -1,6 +1,6 @@
 # Nucleus Enterprise Taskbot Agent
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 <!-- Add other relevant badges: build status, version, etc. -->
 <!-- e.g., [![GitHub version](https://badge.fury.io/gh/nucleusenterpriseai%2Fnucleus-taskbot-agent.svg)](https://badge.fury.io/gh/nucleusenterpriseai%2Fnucleus-taskbot-agent) -->
 
