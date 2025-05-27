@@ -205,7 +205,6 @@ echo "-------------------------------------------------------"
 echo "Public Domain:                ${PUBLIC_DOMAIN_INPUT}"
 echo "Taskbot License Token:        ${TASKBOT_LICENSE_TOKEN_INPUT}"
 echo "Internal Service Passwords:   [Using pre-defined defaults]"
-echo "SSH User for Agent Deploy:    ${INSTALLER_SSH_USER_INPUT:-N/A}"
 echo "-------------------------------------------------------"
 
 read -rp "Is this configuration correct? (yes/no) [yes]: " confirmation
@@ -221,7 +220,6 @@ GENERATED_ENV_CONTENT="$ENV_FILE_CONTENT" # Start with the template
 # Substitute only the prompted variables
 GENERATED_ENV_CONTENT=$(echo "$GENERATED_ENV_CONTENT" | sed "s|\\\${PUBLIC_DOMAIN_INPUT}|${PUBLIC_DOMAIN_INPUT}|g")
 GENERATED_ENV_CONTENT=$(echo "$GENERATED_ENV_CONTENT" | sed "s|\\\${TASKBOT_LICENSE_TOKEN_INPUT}|${TASKBOT_LICENSE_TOKEN_INPUT}|g")
-GENERATED_ENV_CONTENT=$(echo "$GENERATED_ENV_CONTENT" | sed "s|\\\${INSTALLER_SSH_USER_INPUT}|${INSTALLER_SSH_USER_INPUT}|g")
 
 if echo "$GENERATED_ENV_CONTENT" > "$ENV_FILE"; then
     echo "   ✅ ${ENV_FILE} generated successfully with your inputs and default service passwords."

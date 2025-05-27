@@ -48,8 +48,6 @@ services:
       # Add other gateway specific environment variables
       # SERVER_PORT: ${GATEWAY_INTERNAL_PORT:-8080} # If image doesn't default to 8080
       # LOG_LEVEL: ${LOG_LEVEL_GATEWAY:-INFO}
-    ports: # Only if you need to access gateway directly, usually accessed via Nginx
-      # - "${GATEWAY_INTERNAL_PORT:-8080}:${GATEWAY_INTERNAL_PORT:-8080}"
     depends_on:
       - taskbot-api-service
     restart: unless-stopped
