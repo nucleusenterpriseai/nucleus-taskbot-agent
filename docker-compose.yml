@@ -146,7 +146,6 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: "${MONGODB_ROOT_PASSWORD}"
     volumes:
       - ${DATA_PATH_BASE:-./taskbot-data}/mongodb:/data/db
-    ports: ["127017:27017"] # Expose for external access if needed, otherwise remove. Changed host port.
     restart: unless-stopped
 
 #───────────────────────────────────────────────────────────────────────────────
