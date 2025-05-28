@@ -102,7 +102,7 @@ services:
 #  Databases & queues
 #───────────────────────────────────────────────────────────────────────────────
   mariadb:
-    image: neaitaskbot/taskbot-mariadb:0.1
+    image: neaitaskbot/taskbot-mariadb:1.0
     container_name: taskbot-mariadb
     environment:
       MYSQL_ROOT_PASSWORD: "${MARIADB_ROOT_PASSWORD}"
