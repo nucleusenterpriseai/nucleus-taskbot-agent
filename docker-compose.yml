@@ -62,6 +62,7 @@ services:
       RUNNING_ON_CLUSTER: "false"
       LOG_LEVEL: ${LOG_LEVEL_API:-INFO}
       TASKBOT_LICENSE_TOKEN: ${TASKBOT_LICENSE_TOKEN}
+      JWT_SECRET: ${JWT_SECRET}
       # SERVER_PORT: ${TASKBOT_API_INTERNAL_PORT:-18902} # If image doesn't default to 18902
 
       # ── MariaDB -----------------------------------------------------------
