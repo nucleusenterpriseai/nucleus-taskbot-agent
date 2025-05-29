@@ -23,6 +23,11 @@ NGINX_CONF_OUTPUT="nginx/app.conf" # Relative to INSTALL_DIR
 
 INSTALL_DIR="$(pwd)/taskbot_deployment" # Installs in a subdirectory of the current path
 
+# Hardcoded License Public Key
+# This is the Base64 encoded public key. The decoded content is a PEM formatted key.
+HARDCODED_LICENSE_PUBLIC_KEY_B64="LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUNvd0JRWURLMlZ3QXlFQXp4cWkrc1dDZkJDdVQ1RTVyZUtMOHQ0WHk2STlKUWdrOTdoZmFsSjVPNEk9Ci0tLS0tRU5EIFBVQkxJQyBLRVktLS0tLQo="
+
+
 echo "📦 Taskbot installer starting …"
 echo "   Installation directory: ${INSTALL_DIR}"
 mkdir -p "${INSTALL_DIR}"
@@ -65,6 +70,14 @@ if ! docker compose version &>/dev/null; then
   fi
   echo "   Installing Docker Compose version: ${LATEST_COMPOSE_VERSION}"
   DOCKER_CLI_PLUGINS_DIR="/usr/local/lib/docker/cli-plugins" # Common location
+  # Also try /usr/lib/docker/cli-plugins for some distributions
+  if [[ ! -w $(dirname "$DOCKER_CLI_PLUGINS_DIR") && -d /usr/lib/docker/cli-plugins ]]; then
+      DOCKER_CLI_PLUGINS_DIR="/usr/lib/docker/cli-plugins"
+  elif [[ ! -w $(dirname "$DOCKER_CLI_PLUGINS_DIR") ]]; then
+      # If primary is not writable and secondary doesn't exist or isn't writable, stick to primary for mkdir
+      DOCKER_CLI_PLUGINS_DIR="/usr/local/lib/docker/cli-plugins"
+  fi
+
   sudo mkdir -p "$DOCKER_CLI_PLUGINS_DIR"
   if sudo curl -SL "https://github.com/docker/compose/releases/download/${LATEST_COMPOSE_VERSION}/docker-compose-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)" \
        -o "$DOCKER_CLI_PLUGINS_DIR/docker-compose"; then
@@ -117,6 +130,7 @@ DEFAULT_REDIS_PASSWORD="secretredispassword"
 DEFAULT_RABBITMQ_PASSWORD="rabbitpassword"
 GENERATED_JWT_SECRET=$(openssl rand -base64 48) # Generate the secret
 
+# Note: HARDCODED_LICENSE_PUBLIC_KEY_B64 is used directly below
 ENV_FILE_CONTENT=$(cat <<EOF
 # ------------------------------------------------------------------------------
 #  Taskbot Environment Configuration (HTTP Only)
@@ -128,7 +142,8 @@ PUBLIC_DOMAIN=\${PUBLIC_DOMAIN_INPUT}
 
 # Java API Service & Gateway Credentials/Config
 TASKBOT_LICENSE_TOKEN=\${TASKBOT_LICENSE_TOKEN_INPUT}
-JWT_SECRET=${GENERATED_JWT_SECRET} # Embed the generated secret directly
+LICENSE_PUBLIC_KEY_B64=${HARDCODED_LICENSE_PUBLIC_KEY_B64}
+JWT_SECRET=${GENERATED_JWT_SECRET} # API Authentication Secret
 
 # Database Credentials (Using pre-defined defaults for internal services)
 # MariaDB
@@ -186,7 +201,7 @@ echo "Press Enter to accept the default value shown in [brackets], if any."
 prompt_for_value "Enter the public domain/hostname for Taskbot (e.g., taskbot.example.com or server IP)" PUBLIC_DOMAIN_INPUT "localhost"
 prompt_for_value "Enter your Taskbot License Token (Required - Get from https://nucleusenterprise.ai/licenses/)" TASKBOT_LICENSE_TOKEN_INPUT ""
 
-if [[ -z "$TASKBOT_LICENSE_TOKEN_INPUT" || "$TASKBOT_LICENSE_TOKEN_INPUT" == "YOUR_LICENSE_TOKEN_HERE" ]]; then
+if [[ -z "$TASKBOT_LICENSE_TOKEN_INPUT" || "$TASKBOT_LICENSE_TOKEN_INPUT" == "YOUR_LICENSE_TOKEN_HERE" ]]; then # Basic check
     echo "❌ ERROR: A valid Taskbot License Token is required." >&2
     echo "Please obtain one from https://nucleusenterprise.ai/licenses/ and re-run the installer." >&2
     exit 1
@@ -198,26 +213,28 @@ echo "Please review your configuration:"
 echo "-------------------------------------------------------"
 echo "Public Domain/Host:         ${PUBLIC_DOMAIN_INPUT}"
 echo "Taskbot License Token:      ${TASKBOT_LICENSE_TOKEN_INPUT}"
+echo "License Public Key (B64):   [Hardcoded in installer]"
 echo "API JWT Secret:             [Auto-generated and secured]"
 echo "Internal Service Passwords: [Using pre-defined defaults]"
 echo "-------------------------------------------------------"
 
 read -rp "Is this configuration correct? (yes/no) [yes]: " confirmation
-if [[ "${confirmation:-yes}" != "yes" && "${confirmation:-YES}" != "YES" ]]; then
+confirmation_lower=$(echo "${confirmation:-yes}" | tr '[:upper:]' '[:lower:]')
+if [[ "$confirmation_lower" != "yes" && "$confirmation_lower" != "y" ]]; then
     echo "Configuration aborted by user. Please re-run the installer." >&2
     exit 1
 fi
 
 echo "✍️  Generating ${ENV_FILE}..."
 # Substitute placeholders in the ENV_FILE_CONTENT
-# Note: GENERATED_JWT_SECRET and other defaults are already embedded.
-# We only need to substitute the prompted values.
 TEMP_ENV_CONTENT="$ENV_FILE_CONTENT" # Use a temporary variable for substitutions
 TEMP_ENV_CONTENT=$(echo "$TEMP_ENV_CONTENT" | sed "s|\\\${PUBLIC_DOMAIN_INPUT}|${PUBLIC_DOMAIN_INPUT}|g")
 TEMP_ENV_CONTENT=$(echo "$TEMP_ENV_CONTENT" | sed "s|\\\${TASKBOT_LICENSE_TOKEN_INPUT}|${TASKBOT_LICENSE_TOKEN_INPUT}|g")
 
+
 if echo "$TEMP_ENV_CONTENT" > "$ENV_FILE"; then
     echo "   ✅ ${ENV_FILE} generated successfully."
+    echo "   ℹ️  License Public Key is hardcoded in this installer."
     echo "   ℹ️  A unique, strong JWT secret for the API service has been auto-generated."
     echo "   ℹ️  Internal service passwords are set to defaults. See script/documentation for details."
     echo "   ⚠️  For enhanced security in production, consider changing default passwords"
@@ -332,9 +349,9 @@ echo "🔄 Managing Docker stack..."
 # Check if any containers for this project exist and stop/remove them
 # The `docker compose ps -q` command lists IDs of containers for the current project.
 # If it outputs anything, containers exist.
-if [ -n "$(docker compose ps -q)" ]; then # Check if output of ps -q is non-empty
+if [ -n "$(docker compose ps -q 2>/dev/null)" ]; then # Check if output of ps -q is non-empty, redirect stderr
   echo "ℹ️  Existing containers found. Stopping and removing them..."
-  if docker compose down; then # Use 'down' to stop and remove containers, networks.
+  if docker compose down --remove-orphans; then # Use 'down' to stop and remove containers, networks.
     echo "✅ Existing containers stopped and removed successfully."
   else
     echo "⚠️  Failed to stop/remove existing containers. Please check manually."
