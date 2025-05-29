@@ -115,6 +115,7 @@ DEFAULT_MARIADB_PASSWORD="secretpassword"
 DEFAULT_MONGODB_ROOT_PASSWORD="secretmongopassword"
 DEFAULT_REDIS_PASSWORD="secretredispassword"
 DEFAULT_RABBITMQ_PASSWORD="rabbitpassword"
+GENERATED_JWT_SECRET=$(openssl rand -base64 48)
 
 ENV_FILE_CONTENT=$(cat <<EOF
 # ------------------------------------------------------------------------------
@@ -128,6 +129,7 @@ PUBLIC_DOMAIN=\${PUBLIC_DOMAIN_INPUT}
 
 # Java API Service & Gateway Credentials/Config
 TASKBOT_LICENSE_TOKEN=\${TASKBOT_LICENSE_TOKEN_INPUT}
+JWT_SECRET=${GENERATED_JWT_SECRET} 
 
 # Database Credentials (Using pre-defined defaults for internal services)
 # MariaDB
