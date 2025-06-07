@@ -141,7 +141,6 @@ ENV_FILE_CONTENT=$(cat <<EOF
 PUBLIC_DOMAIN=\${PUBLIC_DOMAIN_INPUT}
 
 # Java API Service & Gateway Credentials/Config
-# TASKBOT_LICENSE_TOKEN is NOT set here. It must be configured in the application
 # via its API or UI after initial deployment.
 LICENSE_PUBLIC_KEY_B64=${HARDCODED_LICENSE_PUBLIC_KEY_B64}
 JWT_SECRET=${GENERATED_JWT_SECRET} # API Authentication Secret
@@ -196,28 +195,14 @@ prompt_for_value() {
     eval "${variable_name}=\"${input:-${default_value}}\""
 }
 
-echo "Please provide the following configuration values."
+echo "Please provide the following configuration value."
 echo "Press Enter to accept the default value shown in [brackets], if any."
 
 prompt_for_value "Enter the public domain/hostname for Taskbot (e.g., taskbot.example.com or server IP)" PUBLIC_DOMAIN_INPUT "localhost"
-
 echo ""
-echo "-------------------------------------------------------"
-echo "Please review your configuration:"
-echo "-------------------------------------------------------"
-echo "Public Domain/Host:         ${PUBLIC_DOMAIN_INPUT}"
-echo "Taskbot License Token:      [To be configured post-installation via API/UI]"
-echo "License Public Key (B64):   [Hardcoded in installer]"
-echo "API JWT Secret:             [Auto-generated and secured]"
-echo "Internal Service Passwords: [Using pre-defined defaults]"
-echo "-------------------------------------------------------"
 
-read -rp "Is this configuration correct? (yes/no) [yes]: " confirmation
-confirmation_lower=$(echo "${confirmation:-yes}" | tr '[:upper:]' '[:lower:]')
-if [[ "$confirmation_lower" != "yes" && "$confirmation_lower" != "y" ]]; then
-    echo "Configuration aborted by user. Please re-run the installer." >&2
-    exit 1
-fi
+# The confirmation prompt has been removed to streamline installation.
+echo "✓ Configuration accepted. Proceeding with installation..."
 
 echo "✍️  Generating ${ENV_FILE}..."
 # Substitute placeholders in the ENV_FILE_CONTENT
@@ -228,7 +213,6 @@ TEMP_ENV_CONTENT=$(echo "$TEMP_ENV_CONTENT" | sed "s|\\\${PUBLIC_DOMAIN_INPUT}|$
 if echo "$TEMP_ENV_CONTENT" > "$ENV_FILE"; then
     echo "   ✅ ${ENV_FILE} generated successfully."
     echo "   ℹ️  License Public Key is hardcoded in this installer."
-    echo "   ℹ️  TASKBOT_LICENSE_TOKEN is NOT set by this installer. It must be configured"
     echo "       in the application (e.g., via API/UI) after initial deployment."
     echo "   ℹ️  A unique, strong JWT secret for the API service has been auto-generated."
     echo "   ℹ️  Internal service passwords are set to defaults. See script/documentation for details."
