@@ -42,7 +42,6 @@ services:
     container_name: taskbot-gateway
     environment:
       CORE_API_URL: "http://taskbot-api-service:${TASKBOT_API_INTERNAL_PORT:-18902}"
-      # Optional routes are disabled in code via @ConditionalOnProperty
     logging:
       driver: "json-file"
       options:
@@ -59,16 +58,11 @@ services:
     image: neaitaskbot/taskbot-api:1.0
     container_name: taskbot-api-service
     environment:
-      # ── Core Application Settings ──────────────────────────────────────────
       ACTIVE_PROFILE: "prod"
       RUNNING_ON_CLUSTER: "false"
       LOG_LEVEL: ${LOG_LEVEL_API:-INFO}
-
-      # ── Security & Authentication ──────────────────────────────────────────
       JWT_SECRET: ${JWT_SECRET}
       LICENSE_PUBLIC_KEY_B64: ${LICENSE_PUBLIC_KEY_B64}
-
-      # ── Database & Broker Connections ─────────────────────────────────────
       JDBC_URL: "jdbc:mariadb://mariadb:3306/${MARIADB_DATABASE_NAME:-nucleus}?zeroDateTimeBehavior=convertToNull&allowMultiQueries=true&useSSL=false"
       JDBC_USR: ${MARIADB_USER:-nucleus_user}
       JDBC_PWD: ${MARIADB_PASSWORD:-secretpassword}
@@ -83,14 +77,15 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PWD: ${REDIS_PASSWORD:-secretredispassword}
-
-      # ── Internal & External Endpoints ─────────────────────────────────────
       CORE_API_ENDPOINT: "http://taskbot-api-service:${TASKBOT_API_INTERNAL_PORT:-18902}"
       FRONT_ENDPOINT: "http://${PUBLIC_DOMAIN:-localhost}"
-
-      # ── Optional Features (Disabled by Default for On-Premise) ───────────
       aws.s3.enabled: "false"
-
+      # Configuration for the LocalFileStorageService
+      storage.local.path: /storage/uploads
+      storage.local.public-url-base: http://${PUBLIC_DOMAIN:-localhost}/uploads
+    volumes:
+      # Mount the shared volume for local file uploads
+      - uploads-data:/storage/uploads # <-- ADD THIS LINE
     logging:
       driver: "json-file"
       options:
@@ -178,6 +173,8 @@ services:
     volumes:
       - ./nginx/app.conf:/etc/nginx/conf.d/default.conf:ro
       - ./certs:/etc/nginx/certs:ro
+      # Mount the shared volume for serving local uploads (read-only for security)
+      - uploads-data:/var/www/uploads:ro # <-- ADD THIS LINE
     ports:
       - "80:80"
       - "443:443"
@@ -194,3 +191,4 @@ services:
 
 volumes:
   installer-data:
+  uploads-data: # <-- DEFINE THE NEW SHARED VOLUME HERE

@@ -24,7 +24,6 @@ NGINX_CONF_OUTPUT="nginx/app.conf" # Relative to INSTALL_DIR
 INSTALL_DIR="$(pwd)/taskbot_deployment" # Installs in a subdirectory of the current path
 
 # Hardcoded License Public Key
-# This is the Base64 encoded public key. The decoded content is a PEM formatted key.
 HARDCODED_LICENSE_PUBLIC_KEY_B64="LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUNvd0JRWURLMlZ3QXlFQXp4cWkrc1dDZkJDdVQ1RTVyZUtMOHQ0WHk2STlKUWdrOTdoZmFsSjVPNEk9Ci0tLS0tRU5EIFBVQkxJQyBLRVktLS0tLQo="
 
 
@@ -51,7 +50,6 @@ if ! command -v docker &>/dev/null; then
       if sudo usermod -aG docker "$TARGET_USER"; then
         echo "✅ User '${TARGET_USER}' added to docker group."
         echo "⚠️ You MUST log out and log back in for this change to take effect before running docker commands without sudo."
-        echo "   Alternatively, you can run 'newgrp docker' in your current shell to apply group changes temporarily."
       else
         echo "❌ Failed to add '${TARGET_USER}' to docker group. You may need to run docker commands with sudo."
       fi
@@ -69,27 +67,17 @@ if ! docker compose version &>/dev/null; then
     LATEST_COMPOSE_VERSION="v2.27.0"
   fi
   echo "   Installing Docker Compose version: ${LATEST_COMPOSE_VERSION}"
-  DOCKER_CLI_PLUGINS_DIR="/usr/local/lib/docker/cli-plugins" # Common location
-  # Also try /usr/lib/docker/cli-plugins for some distributions
-  if [[ ! -w $(dirname "$DOCKER_CLI_PLUGINS_DIR") && -d /usr/lib/docker/cli-plugins ]]; then
-      DOCKER_CLI_PLUGINS_DIR="/usr/lib/docker/cli-plugins"
-  elif [[ ! -w $(dirname "$DOCKER_CLI_PLUGINS_DIR") ]]; then
-      # If primary is not writable and secondary doesn't exist or isn't writable, stick to primary for mkdir
-      DOCKER_CLI_PLUGINS_DIR="/usr/local/lib/docker/cli-plugins"
+  DOCKER_CLI_PLUGINS_DIR="/usr/local/lib/docker/cli-plugins"
+  if [[ ! -d "$DOCKER_CLI_PLUGINS_DIR" ]]; then
+      sudo mkdir -p "$DOCKER_CLI_PLUGINS_DIR"
   fi
 
-  sudo mkdir -p "$DOCKER_CLI_PLUGINS_DIR"
   if sudo curl -SL "https://github.com/docker/compose/releases/download/${LATEST_COMPOSE_VERSION}/docker-compose-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)" \
        -o "$DOCKER_CLI_PLUGINS_DIR/docker-compose"; then
     sudo chmod +x "$DOCKER_CLI_PLUGINS_DIR/docker-compose"
     echo "✅ Docker Compose plugin installed to $DOCKER_CLI_PLUGINS_DIR."
-    if ! docker compose version &>/dev/null; then
-        echo "❌ Docker Compose still not found after installation. Check PATH or try manual install." >&2
-        exit 1
-    fi
   else
     echo "❌ Failed to download Docker Compose plugin. Please install it manually." >&2
-    echo "   See: https://docs.docker.com/compose/install/" >&2
     exit 1
   fi
 else
@@ -98,215 +86,128 @@ fi
 
 # ── 3. Download stack definition files ───────────────────────────────────────
 echo "⬇️  Downloading stack definition file: ${COMPOSE_FILE}..."
-download_file() {
-  local remote_path="$1" # e.g., "docker-compose.yml"
-  local local_path="$2"  # e.g., "./docker-compose.yml" (relative to INSTALL_DIR)
-
-  mkdir -p "$(dirname "$local_path")" # Ensure directory for local_path exists
-  echo "   Fetching ${RAW_CONTENT_BASE_URL}/${remote_path} to ${local_path}..."
-  if curl -fsSL "${RAW_CONTENT_BASE_URL}/${remote_path}" -o "${local_path}"; then
-    echo "   ✅ Downloaded ${local_path}"
-  else
-    echo "   ❌ Failed to download ${remote_path}. Please check URL and network." >&2
-    exit 1
-  fi
+# Cache-busting to ensure we always get the latest version during development/updates
+curl -fsSL "${RAW_CONTENT_BASE_URL}/${COMPOSE_FILE}?$(date +%s)" -o "${COMPOSE_FILE}" || {
+    echo "   ❌ Failed to download ${COMPOSE_FILE}. Please check URL and network." >&2; exit 1;
 }
+echo "   ✅ Downloaded ${COMPOSE_FILE}"
 
-download_file "${COMPOSE_FILE}" "${COMPOSE_FILE}" # Download to current dir (INSTALL_DIR)
-
-mkdir -p ./keys # Relative to INSTALL_DIR
-echo "ℹ️  Created ./keys directory. If your installer service needs SSH keys to deploy agents,"
-echo "   please place the private key (e.g., 'agent_ssh_key') in this './keys' directory."
-echo "   (This is configured later, typically via the UI or by editing the .env file)."
+mkdir -p ./keys ./certs # Create necessary empty directories
+echo "ℹ️  Created ./keys directory for agent SSH keys."
 
 
 # ── 4. Configure Environment Variables & Setup .env file ───────────────────
-ENV_FILE=".env" # Relative to INSTALL_DIR
-
+ENV_FILE=".env"
 DEFAULT_MARIADB_ROOT_PASSWORD="supersecretrootpassword"
 DEFAULT_MARIADB_PASSWORD="secretpassword"
 DEFAULT_MONGODB_ROOT_PASSWORD="secretmongopassword"
 DEFAULT_REDIS_PASSWORD="secretredispassword"
 DEFAULT_RABBITMQ_PASSWORD="rabbitpassword"
-GENERATED_JWT_SECRET=$(openssl rand -base64 48) # Generate the secret
+GENERATED_JWT_SECRET=$(openssl rand -base64 48)
 
-# Note: HARDCODED_LICENSE_PUBLIC_KEY_B64 is used directly below
 ENV_FILE_CONTENT=$(cat <<EOF
 # ------------------------------------------------------------------------------
 #  Taskbot Environment Configuration (HTTP Only)
 #  This file is auto-generated by the installer.
 # ------------------------------------------------------------------------------
-
-# Domain/IP for external access (used for constructing HTTP URLs)
 PUBLIC_DOMAIN=\${PUBLIC_DOMAIN_INPUT}
-
-# Java API Service & Gateway Credentials/Config
-# via its API or UI after initial deployment.
 LICENSE_PUBLIC_KEY_B64=${HARDCODED_LICENSE_PUBLIC_KEY_B64}
-JWT_SECRET=${GENERATED_JWT_SECRET} # API Authentication Secret
-
-# Database Credentials (Using pre-defined defaults for internal services)
-# MariaDB
+JWT_SECRET=${GENERATED_JWT_SECRET}
 MARIADB_ROOT_PASSWORD=${DEFAULT_MARIADB_ROOT_PASSWORD}
 MARIADB_DATABASE_NAME=nucleus
 MARIADB_USER=nucleus_user
 MARIADB_PASSWORD=${DEFAULT_MARIADB_PASSWORD}
-
-# MongoDB
 MONGODB_ROOT_USERNAME=mongoadmin
 MONGODB_ROOT_PASSWORD=${DEFAULT_MONGODB_ROOT_PASSWORD}
-
-# Redis
 REDIS_PASSWORD=${DEFAULT_REDIS_PASSWORD}
-
-# RabbitMQ
 RABBITMQ_DEFAULT_USER=rabbituser
 RABBITMQ_DEFAULT_PASS=${DEFAULT_RABBITMQ_PASSWORD}
-
-# Taskbot Installer Service Configuration
 TASKBOT_DEPLOY_MODE=ONPREMISE
 FLASK_RUN_PORT=5000
-
-# SSH details for agent deployment (configure via UI or by editing this file when needed)
 INSTALLER_SSH_PRIVATE_KEY_PATH=/etc/taskbot/keys/agent_ssh_key
-INSTALLER_SSH_USER= # Defaults to blank, to be configured later
-
-# Data Persistence Paths
-DATA_PATH_BASE=./taskbot-data # Relative to INSTALL_DIR
-
-# Service Internal Ports (ensure services listen on these HTTP ports)
+INSTALLER_SSH_USER=
+DATA_PATH_BASE=./taskbot-data
 GATEWAY_INTERNAL_PORT=8080
 TASKBOT_API_INTERNAL_PORT=18902
-
-# Logging Levels (examples - uncomment and set as needed in .env)
-# LOG_LEVEL_API=INFO
-# LOG_LEVEL_GATEWAY=INFO
 EOF
 )
 
 echo "⚙️  Configuring environment variables..."
-
-prompt_for_value() {
-    local prompt_text="$1"
-    local variable_name="$2"
-    local default_value="$3"
-    local input
-    read -rp "${prompt_text} [${default_value}]: " input
-    eval "${variable_name}=\"${input:-${default_value}}\""
-}
-
-echo "Please provide the following configuration value."
-echo "Press Enter to accept the default value shown in [brackets], if any."
-
-prompt_for_value "Enter the public domain/hostname for Taskbot (e.g., taskbot.example.com or server IP)" PUBLIC_DOMAIN_INPUT "localhost"
+read -rp "Enter the public domain/hostname for Taskbot (e.g., taskbot.example.com or server IP) [localhost]: " PUBLIC_DOMAIN_INPUT
+PUBLIC_DOMAIN_INPUT=${PUBLIC_DOMAIN_INPUT:-localhost}
 echo ""
-
-# The confirmation prompt has been removed to streamline installation.
 echo "✓ Configuration accepted. Proceeding with installation..."
 
 echo "✍️  Generating ${ENV_FILE}..."
-# Substitute placeholders in the ENV_FILE_CONTENT
-TEMP_ENV_CONTENT="$ENV_FILE_CONTENT" # Use a temporary variable for substitutions
-TEMP_ENV_CONTENT=$(echo "$TEMP_ENV_CONTENT" | sed "s|\\\${PUBLIC_DOMAIN_INPUT}|${PUBLIC_DOMAIN_INPUT}|g")
+TEMP_ENV_CONTENT=$(echo "$ENV_FILE_CONTENT" | sed "s|\\\${PUBLIC_DOMAIN_INPUT}|${PUBLIC_DOMAIN_INPUT}|g")
+echo "$TEMP_ENV_CONTENT" > "$ENV_FILE" || { echo "   ❌ Failed to generate ${ENV_FILE}."; exit 1; }
+echo "   ✅ ${ENV_FILE} generated successfully."
 
-
-if echo "$TEMP_ENV_CONTENT" > "$ENV_FILE"; then
-    echo "   ✅ ${ENV_FILE} generated successfully."
-    echo "   ℹ️  License Public Key is hardcoded in this installer."
-    echo "       in the application (e.g., via API/UI) after initial deployment."
-    echo "   ℹ️  A unique, strong JWT secret for the API service has been auto-generated."
-    echo "   ℹ️  Internal service passwords are set to defaults. See script/documentation for details."
-    echo "   ⚠️  For enhanced security in production, consider changing default passwords"
-    echo "       in the .env file and restarting the services if this is a sensitive environment."
-else
-    echo "   ❌ Failed to generate ${ENV_FILE}." >&2
-    exit 1
-fi
-
-# Source the .env file to make its variables available for Nginx config, etc.
-# This should be done *after* the .env file is fully generated and written.
 set -a
-# shellcheck disable=SC1090 # Disables warning about non-constant source path
-source "./${ENV_FILE}" # Source the .env file from the current directory (INSTALL_DIR)
+source "./${ENV_FILE}"
 set +a
 
 
 # ── 5. Generate Nginx Configuration File ─────────────────────────────────────
 echo "⚙️  Generating Nginx configuration file (HTTP only)..."
-NGINX_CONF_DIR=$(dirname "$NGINX_CONF_OUTPUT") # e.g., "nginx"
-mkdir -p "$NGINX_CONF_DIR" # Create ./nginx if it doesn't exist
-
-# Variables are sourced from .env now
-EFFECTIVE_PUBLIC_DOMAIN="${PUBLIC_DOMAIN:-localhost}" # Fallback if not set in .env
-EFFECTIVE_GATEWAY_PORT="${GATEWAY_INTERNAL_PORT:-8080}"
-EFFECTIVE_FLASK_PORT="${FLASK_RUN_PORT:-5000}"
+mkdir -p "$(dirname "$NGINX_CONF_OUTPUT")"
 
 # NGINX_CONF_OUTPUT is relative to INSTALL_DIR, e.g., "nginx/app.conf"
 if cat > "$NGINX_CONF_OUTPUT" <<EOF
 # Dynamically generated Nginx configuration by install_taskbot.sh (HTTP Only)
-
-upstream frontend_server {
-    server frontend:3000;
-}
-
-upstream gateway_server { # Assuming gateway listens on HTTP
-    server gateway:${EFFECTIVE_GATEWAY_PORT};
-}
-
-# Optional: Upstream for installer service if Nginx needs to proxy to it directly
-# upstream installer_api_server {
-#     server installer:${EFFECTIVE_FLASK_PORT};
-# }
+upstream frontend_server { server frontend:3000; }
+upstream gateway_server { server gateway:${GATEWAY_INTERNAL_PORT}; }
 
 server {
     listen 80;
-    server_name ${EFFECTIVE_PUBLIC_DOMAIN} host.docker.internal; # host.docker.internal is useful for Docker Desktop
-
-    client_max_body_size 100M; # Example: Allow larger uploads
+    server_name ${PUBLIC_DOMAIN} host.docker.internal;
+    client_max_body_size 100M;
     access_log /var/log/nginx/taskbot.access.log;
     error_log /var/log/nginx/taskbot.error.log;
 
-    # Standard proxy headers
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto http; # Indicate original request was HTTP
+    proxy_set_header X-Forwarded-Proto http;
     proxy_set_header Host \$host;
+
+    # Route for the Local File Storage uploads
+    # This serves static files from the shared 'uploads-data' volume.
+    location /uploads/ {
+        alias /var/www/uploads/;
+        expires 7d;
+        add_header Cache-Control "public";
+    }
 
     location / {
         proxy_pass http://frontend_server;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "Upgrade"; # For WebSockets if frontend uses them on /
+        proxy_set_header Connection "Upgrade";
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
     }
 
     location /core/ {
-        proxy_pass http://gateway_server; # Nginx to Gateway is HTTP
+        proxy_pass http://gateway_server;
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
     }
 
     location /agentrtc/ {
-        proxy_pass http://gateway_server; # Nginx to Gateway is HTTP
+        proxy_pass http://gateway_server;
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
     }
 
-    location /agentws/ { # WebSocket over plain HTTP is ws://
-        proxy_pass http://gateway_server; # Nginx to Gateway is HTTP
+    location /agentws/ {
+        proxy_pass http://gateway_server;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "Upgrade";
         proxy_buffering off;
-        proxy_read_timeout 86400s; # Long timeout for persistent connections
+        proxy_read_timeout 86400s;
         proxy_send_timeout 86400s;
     }
-
-    # Example: If you need to expose the installer API via Nginx (uncomment upstream too)
-    # location /installer_api/ {
-    #     proxy_pass http://installer_api_server;
-    # }
 
     location = /favicon.ico { access_log off; log_not_found off; }
     location = /robots.txt  { access_log off; log_not_found off; }
@@ -322,36 +223,15 @@ fi
 # ── 6. Manage Docker Stack (Stop, Pull, Start) ───────────────────────────────
 echo "🔄 Managing Docker stack..."
 
-# We are already in ${INSTALL_DIR}, so Docker Compose commands will use this context.
-# Docker Compose uses the directory name as the default project name.
-
-# Check if any containers for this project exist and stop/remove them
-# The `docker compose ps -q` command lists IDs of containers for the current project.
-# If it outputs anything, containers exist.
-if [ -n "$(docker compose ps -q 2>/dev/null)" ]; then # Check if output of ps -q is non-empty, redirect stderr
+if [ -n "$(docker compose ps -q 2>/dev/null)" ]; then
   echo "ℹ️  Existing containers found. Stopping and removing them..."
-  if docker compose down --remove-orphans; then # Use 'down' to stop and remove containers, networks.
-    echo "✅ Existing containers stopped and removed successfully."
-  else
-    echo "⚠️  Failed to stop/remove existing containers. Please check manually."
-    # Consider exiting if 'down' fails, as 'up' might have issues.
-    # exit 1
-  fi
-else
-  echo "ℹ️  No existing containers found for this project."
+  docker compose down --remove-orphans || echo "⚠️  Failed to stop/remove existing containers. Proceeding anyway."
 fi
 
 echo "🚀 Pulling latest specified Docker images … (this may take a while)"
-if docker compose pull; then
-  echo "✅ Images pulled successfully."
-else
-  echo "❌ Failed to pull Docker images. Check image names, network, and Docker Hub access." >&2
-  # Depending on policy, you might want to exit or allow proceeding with local/old images.
-  # exit 1
-fi
+docker compose pull || echo "⚠️  Failed to pull some images. Proceeding with local versions if available."
 
 echo "🟢 Starting containers …"
-# --remove-orphans removes containers for services not defined in the Compose file.
 if docker compose up -d --remove-orphans; then
   echo "✅ Docker containers started successfully."
 else
@@ -362,17 +242,14 @@ fi
 echo ""
 echo "🎉 Taskbot installation/update is complete! (HTTP ONLY)"
 echo "   The application stack should now be running."
-echo "   IMPORTANT: The Taskbot License Token has NOT been configured."
-echo "   You MUST configure it via the application's API/UI for full functionality."
 echo ""
 echo "🔗 Access Points (HTTP):"
-# PUBLIC_DOMAIN is sourced from .env
-echo "   ↪  Portal   : http://${PUBLIC_DOMAIN:-localhost}/" # Fallback for PUBLIC_DOMAIN
-echo "   ↪  Gateway  : http://${PUBLIC_DOMAIN:-localhost}/core/"
+echo "   ↪  Portal   : http://${PUBLIC_DOMAIN}/"
+echo "   ↪  Gateway  : http://${PUBLIC_DOMAIN}/core/"
 echo ""
 echo "ℹ️  To view logs: cd ${INSTALL_DIR} && docker compose logs -f"
 echo "ℹ️  To stop: cd ${INSTALL_DIR} && docker compose down"
-# DATA_PATH_BASE is sourced from .env
-echo "ℹ️  Data is stored in: ${INSTALL_DIR}/${DATA_PATH_BASE:-./taskbot-data}" # Fallback for DATA_PATH_BASE
+echo "ℹ️  Data is stored in: ${INSTALL_DIR}/${DATA_PATH_BASE:-./taskbot-data}"
+echo "ℹ️  Uploaded files are stored in a Docker volume named 'uploads-data'."
 echo ""
 echo "Script finished."
