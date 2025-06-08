@@ -25,6 +25,9 @@ ENV_FILE=".env"
 
 INSTALL_DIR="$(pwd)/taskbot_deployment"
 
+# The public key is required for startup to validate future tokens.
+HARDCODED_LICENSE_PUBLIC_KEY_B64="LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUNvd0JRWURLMlZ3QXlFQXp4cWkrc1dDZkJDdVQ1RTVyZUtMOHQ0WHk2STlKUWdrOTdoZmFsSjVPNEk9Ci0tLS0tRU5EIFBVQkxJQyBLRVktLS0tLQo="
+
 echo "📦 Taskbot installer starting …"
 echo "   Installation directory: ${INSTALL_DIR}"
 mkdir -p "${INSTALL_DIR}"
@@ -152,10 +155,12 @@ MONGO_LOGGER_QUEUE=mongo_event_logger_queue
 AGENT_COMMANDS_EXCHANGE=agent_commands_direct_exchange
 
 # === Security & Authentication ================================================
+# The public key is required for startup.
+LICENSE_PUBLIC_KEY_B64=${HARDCODED_LICENSE_PUBLIC_KEY_B64}
 JWT_BASE64_SECRET=${GENERATED_JWT_SECRET}
 JWT_SECRET=${GENERATED_JWT_SECRET}
-GOOGLE_CLIENT_ID=1035594514237-isdbotpjfbfj8c95gh8dk1amp4fh81as.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=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
+# --- Google OAuth (EXPLICITLY DISABLED FOR ON-PREMISE DEPLOYMENT) ---
+GOOGLE_OAUTH_ENABLED=false
 
 # === Cloud & Email Services ===================================================
 aws.s3.enabled=false
