@@ -78,7 +78,7 @@ services:
 #  Databases & Queues (UPDATED CREDENTIALS & PORTS)
 #───────────────────────────────────────────────────────────────────────────────
   mariadb:
-    image: mariadb:10.6 # Using a standard, versioned image is often more stable
+    image: neaitaskbot/taskbot-mariadb:1.0
     container_name: taskbot-mariadb
     restart: unless-stopped
     environment:
