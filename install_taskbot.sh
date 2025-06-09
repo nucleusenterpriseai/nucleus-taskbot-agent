@@ -129,7 +129,7 @@ FRONT_ENDPOINT=http://${PUBLIC_DOMAIN_INPUT}:3000
 
 # === Database (MariaDB) =======================================================
 JDBC_URL=jdbc:mariadb://mariadb:3306/nucleus?zeroDateTimeBehavior=convertToNull&allowMultiQueries=true&useSSL=false&serverTimezone=UTC
-JDBC_USR=root
+JDBC_USR=taskbot_user
 JDBC_PWD=NETB2023=BaT
 
 # === Database (MongoDB) =======================================================
