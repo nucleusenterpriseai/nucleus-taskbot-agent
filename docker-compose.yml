@@ -40,8 +40,8 @@ services:
   gateway:
     image: neaitaskbot/taskbot-gw:1.0
     container_name: taskbot-gateway
-    environment:
-      CORE_API_URL: "http://taskbot-api-service:${TASKBOT_API_INTERNAL_PORT:-18902}"
+    env_file:
+      - .env.gateway
     logging:
       driver: "json-file"
       options:
