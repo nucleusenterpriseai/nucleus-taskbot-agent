@@ -78,7 +78,7 @@ services:
 #  Databases & Queues (UPDATED CREDENTIALS & PORTS)
 #───────────────────────────────────────────────────────────────────────────────
   mariadb:
-    image: neaitaskbot/taskbot-mariadb:1.0
+    image: mariadb:11.3
     container_name: taskbot-mariadb
     restart: unless-stopped
     environment:
