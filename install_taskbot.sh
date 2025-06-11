@@ -175,11 +175,11 @@ fi
 # 5. Generate Secure Environment Files
 # ─────────────────────────────────────────────────────────────────────────────
 echo "🔐 Generating secure, random passwords for services..."
-JDBC_PASSWORD=$(openssl rand -base64 16)
-MONGO_PASSWORD=$(openssl rand -base64 16)
-REDIS_PASSWORD=$(openssl rand -base64 16)
-RABBITMQ_PASSWORD=$(openssl rand -base64 16)
-JWT_SECRET=$(openssl rand -base64 48)
+JDBC_PASSWORD=$(openssl rand -hex 16)
+MONGO_PASSWORD=$(openssl rand -hex 16)
+REDIS_PASSWORD=$(openssl rand -hex 16)
+RABBITMQ_PASSWORD=$(openssl rand -hex 16)
+JWT_SECRET=$(openssl rand -hex 48) # hex is also safer here
 echo "   ✅ Passwords generated."
 
 echo "✍️  Generating environment files..."
@@ -249,6 +249,7 @@ TASKBOT_DEPLOY_MODE=ONPREMISE
 FLASK_RUN_PORT=5000
 DATA_PATH_BASE=./taskbot-data
 TASKBOT_API_INTERNAL_PORT=18902
+CORS_ORIGINS=${PUBLIC_URL}
 EOF
 
 # --- Generate .env.frontend file (for the Next.js service) ---
