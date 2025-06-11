@@ -46,5 +46,5 @@ A valid license key (`TASKBOT_LICENSE_TOKEN`) is required for the Taskbot servic
 **Installation Command:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nucleusenterpriseai/nucleus-taskbot-agent/main/install_taskbot.sh -o install_taskbot.sh && chmod +x install_taskbot.sh && sudo ./install_taskbot.sh
+curl -fsSL "https://raw.githubusercontent.com/nucleusenterpriseai/nucleus-taskbot-agent/main/install_taskbot.sh?$(date +%s)" -o install_taskbot.sh && chmod +x install_taskbot.sh && sudo ./install_taskbot.sh
 ```
