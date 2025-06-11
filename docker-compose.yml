@@ -5,8 +5,8 @@ services:
   frontend:
     image: neaitaskbot/taskbot-portal:1.0
     container_name: taskbot-frontend
-    environment:
-      NODE_ENV: production
+    env_file:
+      - .env.frontend
     logging:
       driver: "json-file"
       options:
@@ -128,7 +128,25 @@ services:
 #───────────────────────────────────────────────────────────────────────────────
   nginx:
     image: nginx:1.27-alpine
-    # ... (rest of service is unchanged)
+    container_name: taskbot-nginx
+    volumes:
+      - ./nginx/app.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+      # Mount the shared volume for serving local uploads (read-only for security)
+      - uploads-data:/var/www/uploads:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    depends_on:
+      - frontend
+      - installer
+      - gateway
+    restart: unless-stopped
 
 volumes:
   installer-data:

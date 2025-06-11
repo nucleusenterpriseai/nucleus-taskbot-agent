@@ -2,25 +2,19 @@
 set -euo pipefail
 
 ###############################################################################
-#  Taskbot All-in-One Installer (Interactive) - v2.2                          #
-#  • Installs Docker + Compose plugin if missing.                             #
-#  • Allows user to choose between a secure (HTTPS) or insecure (HTTP) setup. #
-#  • Generates Nginx and .env configurations based on the user's choice.      #
-#  • Provides clear instructions for any required manual steps.               #
-#  • Manages the Docker stack (stops existing, pulls latest, starts new).     #
-#  Run as root (or with sudo) on Ubuntu/Debian-like hosts.                    #
+#  Taskbot All-in-One Installer (Environment-Aware) - v2.9                    #
+#  • Fixes 'scratch' image error by using a correct override method.          #
+#  • Fixes missing environment variable warnings by generating all usernames. #
+#  • Ensures all required static and dynamic variables are generated in .env. #
+#  • Asks user if they want to use an existing host Nginx or run a new one.    #
+#  • Securely auto-generates all service passwords.                           #
 ###############################################################################
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
-GH_REPO_OWNER="nucleusenterpriseai"
-GH_REPO_NAME="nucleus-taskbot-agent"
-GH_BRANCH="main"
-
-RAW_CONTENT_BASE_URL="https://raw.githubusercontent.com/${GH_REPO_OWNER}/${GH_REPO_NAME}/${GH_BRANCH}"
-
 COMPOSE_FILE="docker-compose.yml"
+OVERRIDE_FILE="docker-compose.override.yml"
 NGINX_CONF_OUTPUT="nginx/app.conf"
 ENV_FILE=".env"
 GATEWAY_ENV_FILE=".env.gateway"
@@ -36,18 +30,15 @@ cd "${INSTALL_DIR}"
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. & 2. Install Docker & Docker Compose (Prerequisites)
 # ─────────────────────────────────────────────────────────────────────────────
-# (This section is copied from your original script and is assumed to be correct)
 if ! command -v docker &>/dev/null; then
   echo "🐳 Docker not found → installing..."
   curl -fsSL https://get.docker.com | sh || { echo "❌ Docker installation failed." >&2; exit 1; }
   TARGET_USER=${SUDO_USER:-$USER}
-  echo "🔑 Adding user '${TARGET_USER}' to docker group..."
   sudo usermod -aG docker "$TARGET_USER"
-  echo "✅ Docker installed. You may need to log out and back in for group changes to apply."
+  echo "✅ Docker installed."
 else
   echo "✅ Docker is already installed."
 fi
-
 if ! docker compose version &>/dev/null; then
   echo "🔧 Docker Compose plugin not found → installing..."
   LATEST_COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
@@ -61,10 +52,10 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. Download Core Files
+# 3. Download Core Files & Create Dirs
 # ─────────────────────────────────────────────────────────────────────────────
 echo "⬇️  Downloading stack definition file: ${COMPOSE_FILE}..."
-curl -fsSL "${RAW_CONTENT_BASE_URL}/${COMPOSE_FILE}?$(date +%s)" -o "${COMPOSE_FILE}" || {
+curl -fsSL "https://raw.githubusercontent.com/nucleusenterpriseai/nucleus-taskbot-agent/main/${COMPOSE_FILE}?$(date +%s)" -o "${COMPOSE_FILE}" || {
     echo "   ❌ Failed to download ${COMPOSE_FILE}." >&2; exit 1;
 }
 echo "   ✅ Downloaded ${COMPOSE_FILE}"
@@ -75,177 +66,126 @@ echo "ℹ️  Created ./keys, ./certs, and ./nginx directories."
 # 4. Interactive Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 echo "------------------------------------------------------------------"
-echo "⚙️  Server Configuration Setup"
+echo "⚙️  Web Server Configuration"
 echo "------------------------------------------------------------------"
-echo "You have two options for setting up this server:"
-echo ""
-echo "  1) SECURE (HTTPS): Requires a domain name and your own SSL certificate files."
-echo "     (This is the recommended option for production environments)"
-echo ""
-echo "  2) INSECURE (HTTP): Uses only the server's IP address. No encryption."
-echo "     (Use this for quick tests or if you do not have a domain name)"
-echo ""
+read -rp "Do you already have an Nginx server running on this host that you want to use? (y/n): " USE_EXISTING_NGINX
 
-read -rp "Do you want to configure a SECURE (HTTPS) server? (y/n): " SETUP_CHOICE
-
-# Declare variables that will be set based on the user's choice
-PROTOCOL=""
-PUBLIC_DOMAIN_OR_IP=""
-PUBLIC_URL=""
-
-if [[ "$SETUP_CHOICE" =~ ^[Yy]$ ]]; then
-    # --- SECURE (HTTPS) PATH ---
+if [[ "$USE_EXISTING_NGINX" =~ ^[Yy]$ ]]; then
+    # --- INTEGRATION MODE ---
     echo ""
-    echo "🔒 Configuring for SECURE (HTTPS) access..."
-    PROTOCOL="https"
-    read -rp "Enter your fully qualified domain name (e.g., taskbot.yourcompany.com): " PUBLIC_DOMAIN_OR_IP
-    if [[ -z "$PUBLIC_DOMAIN_OR_IP" ]]; then
-        echo "❌ Domain name cannot be empty. Exiting." >&2; exit 1
-    fi
-    PUBLIC_URL="${PROTOCOL}://${PUBLIC_DOMAIN_OR_IP}"
+    echo "🔗 Configuring for integration with your existing Nginx..."
+    read -rp "Enter the domain name this service will use (e.g., taskbot.yourcompany.com): " PUBLIC_DOMAIN_OR_IP
+    PUBLIC_URL="https://${PUBLIC_DOMAIN_OR_IP}"
 
-    echo ""
-    echo "ℹ️  Please provide the absolute paths to your SSL certificate files on this host machine."
-    read -rp "Path to your certificate file (e.g., /etc/letsencrypt/live/your.domain/fullchain.pem): " CERT_PATH
-    read -rp "Path to your private key file (e.g., /etc/letsencrypt/live/your.domain/privkey.pem): " KEY_PATH
-
-    if [[ ! -f "$CERT_PATH" || ! -f "$KEY_PATH" ]]; then
-        echo "❌ One or both certificate files not found at the specified paths. Exiting." >&2; exit 1
-    fi
-
-    echo "✍️  Generating Nginx configuration for HTTPS..."
-    GATEWAY_INTERNAL_PORT=8080
-    cat > "$NGINX_CONF_OUTPUT" <<EOF
-# Nginx configuration for HTTPS (Auto-generated)
-upstream frontend_server { server frontend:3000; }
-upstream gateway_server { server gateway:${GATEWAY_INTERNAL_PORT}; }
-
-server {
-    listen 80;
-    server_name ${PUBLIC_DOMAIN_OR_IP};
-    return 301 https://\$host\$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name ${PUBLIC_DOMAIN_OR_IP};
-
-    ssl_certificate /etc/nginx/certs/fullchain.pem;
-    ssl_certificate_key /etc/nginx/certs/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-
-    client_max_body_size 100M;
-    location / {
-        proxy_pass http://frontend_server;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "Upgrade";
-    }
-    location /core/ { proxy_pass http://gateway_server; }
-    location /agentrtc/ { proxy_pass http://gateway_server; }
-    location /agentws/ {
-        proxy_pass http://gateway_server;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "Upgrade";
-    }
-}
+    echo "✍️  Generating Docker Compose override file to expose application ports..."
+    cat > "$OVERRIDE_FILE" <<EOF
+# This file is auto-generated to expose internal services to your host Nginx.
+services:
+  frontend:
+    ports:
+      - "127.0.0.1:3000:3000" # Expose frontend only to the host machine
+  gateway:
+    ports:
+      - "127.0.0.1:8080:8080" # Expose gateway only to the host machine
+  nginx:
+    # This correctly disables the Nginx service by making it do nothing and exit.
+    entrypoint: /bin/true
 EOF
-    echo "   ✅ Nginx configuration generated at ${NGINX_CONF_OUTPUT}"
+    echo "   ✅ Override file generated. The installer's Nginx container is now disabled."
 
     echo ""
-    echo "⚠️  ACTION REQUIRED: You must now update your docker-compose.yml file!"
-    echo "   Find the 'nginx' service and add the following 'ports' and 'volumes' sections."
-    echo "   This allows Nginx to handle HTTPS traffic and access your certificates."
+    echo "⚠️  ACTION REQUIRED: Add the following configuration to your HOST's Nginx setup."
+    echo "   (e.g., inside a 'server' block in /etc/nginx/sites-available/your-site.conf)"
+    echo "------------------------------------------------------------------"
     echo ""
-    echo "   services:"
-    echo "     nginx:"
-    echo "       # ..."
-    echo "       ports:"
-    echo "         - \"80:80\""
-    echo "         - \"443:443\""
-    echo "       volumes:"
-    echo "         - ./nginx/app.conf:/etc/nginx/conf.d/default.conf:ro"
-    echo "         - ${CERT_PATH}:/etc/nginx/certs/fullchain.pem:ro"
-    echo "         - ${KEY_PATH}:/etc/nginx/certs/privkey.pem:ro"
+    echo "# --- Start of Taskbot Nginx Configuration ---"
+    echo "location / { proxy_pass http://127.0.0.1:3000; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection \"Upgrade\"; }"
+    echo "location /core/ { proxy_pass http://127.0.0.1:8080; }"
+    echo "location /agentrtc/ { proxy_pass http://127.0.0.1:8080; }"
+    echo "location /agentws/ { proxy_pass http://127.0.0.1:8080; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection \"Upgrade\"; }"
+    echo "# --- End of Taskbot Nginx Configuration ---"
     echo ""
-    read -rp "Have you finished editing docker-compose.yml? Press [Enter] to continue."
+    echo "------------------------------------------------------------------"
+    echo "After adding this, test your Nginx config with 'sudo nginx -t' and reload with 'sudo systemctl reload nginx'."
+    echo ""
+    read -rp "Press [Enter] to acknowledge and continue with the installation."
+    PROTOCOL="https" # Assume integration is always for a secure domain
 
 else
-    # --- INSECURE (HTTP) PATH ---
+    # --- STANDALONE MODE ---
     echo ""
-    echo "🌐 Configuring for INSECURE (HTTP) access..."
-    PROTOCOL="http"
-    read -rp "Enter the public IP address of this server: " PUBLIC_DOMAIN_OR_IP
-    if [[ -z "$PUBLIC_DOMAIN_OR_IP" ]]; then
-        echo "❌ IP address cannot be empty. Exiting." >&2; exit 1
-    fi
-    PUBLIC_URL="${PROTOCOL}://${PUBLIC_DOMAIN_OR_IP}"
+    echo "🚀 Configuring a new, dedicated Nginx container for this stack..."
+    read -rp "Do you want to configure this Nginx for SECURE (HTTPS)? (y/n): " SETUP_CHOICE
 
-    echo "✍️  Generating Nginx configuration for HTTP..."
-    GATEWAY_INTERNAL_PORT=8080
-    # This is the original Nginx configuration from your script
-    cat > "$NGINX_CONF_OUTPUT" <<EOF
-# Nginx configuration for HTTP (Auto-generated)
+    if [[ "$SETUP_CHOICE" =~ ^[Yy]$ ]]; then
+        PROTOCOL="https"
+        read -rp "Enter your fully qualified domain name: " PUBLIC_DOMAIN_OR_IP
+        PUBLIC_URL="https://${PUBLIC_DOMAIN_OR_IP}"
+        read -rp "Path to your certificate file: " CERT_PATH
+        read -rp "Path to your private key file: " KEY_PATH
+        if [[ ! -f "$CERT_PATH" || ! -f "$KEY_PATH" ]]; then echo "❌ Cert files not found." >&2; exit 1; fi
+        
+        cat > "$NGINX_CONF_OUTPUT" <<EOF
+# Nginx configuration for HTTPS (Auto-generated)
 upstream frontend_server { server frontend:3000; }
-upstream gateway_server { server gateway:${GATEWAY_INTERNAL_PORT}; }
-
+upstream gateway_server { server gateway:8080; }
+server { listen 80; server_name ${PUBLIC_DOMAIN_OR_IP}; return 301 https://\$host\$request_uri; }
 server {
-    listen 80;
-    server_name ${PUBLIC_DOMAIN_OR_IP};
-    client_max_body_size 100M;
-    proxy_set_header X-Real-IP \$remote_addr;
-    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto http;
-    proxy_set_header Host \$host;
-    location / {
-        proxy_pass http://frontend_server;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "Upgrade";
-    }
+    listen 443 ssl http2; server_name ${PUBLIC_DOMAIN_OR_IP};
+    ssl_certificate /etc/nginx/certs/fullchain.pem; ssl_certificate_key /etc/nginx/certs/privkey.pem;
+    location / { proxy_pass http://frontend_server; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
     location /core/ { proxy_pass http://gateway_server; }
     location /agentrtc/ { proxy_pass http://gateway_server; }
-    location /agentws/ {
-        proxy_pass http://gateway_server;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "Upgrade";
-    }
+    location /agentws/ { proxy_pass http://gateway_server; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
 }
 EOF
-    echo "   ✅ Nginx configuration generated at ${NGINX_CONF_OUTPUT}"
-
-    echo ""
-    echo "⚠️  ACTION REQUIRED: Please ensure your docker-compose.yml is configured for Nginx."
-    echo "   Find the 'nginx' service and ensure it has the following 'ports' and 'volumes'."
-    echo ""
-    echo "   services:"
-    echo "     nginx:"
-    echo "       # ..."
-    echo "       ports:"
-    echo "         - \"80:80\""
-    echo "       volumes:"
-    echo "         - ./nginx/app.conf:/etc/nginx/conf.d/default.conf:ro"
-    echo ""
-    read -rp "Press [Enter] to acknowledge and continue."
-
+        cat > "$OVERRIDE_FILE" <<EOF
+services:
+  nginx:
+    ports: ["80:80", "443:443"]
+    volumes: ["./nginx/app.conf:/etc/nginx/conf.d/default.conf:ro", "${CERT_PATH}:/etc/nginx/certs/fullchain.pem:ro", "${KEY_PATH}:/etc/nginx/certs/privkey.pem:ro", "uploads-data:/var/www/uploads:ro"]
+EOF
+    else
+        PROTOCOL="http"
+        read -rp "Enter the public IP address of this server: " PUBLIC_DOMAIN_OR_IP
+        PUBLIC_URL="http://${PUBLIC_DOMAIN_OR_IP}"
+        cat > "$NGINX_CONF_OUTPUT" <<EOF
+# Nginx configuration for HTTP (Auto-generated)
+upstream frontend_server { server frontend:3000; }
+upstream gateway_server { server gateway:8080; }
+server {
+    listen 80; server_name ${PUBLIC_DOMAIN_OR_IP};
+    location / { proxy_pass http://frontend_server; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
+    location /core/ { proxy_pass http://gateway_server; }
+    location /agentrtc/ { proxy_pass http://gateway_server; }
+    location /agentws/ { proxy_pass http://gateway_server; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
+}
+EOF
+        cat > "$OVERRIDE_FILE" <<EOF
+services:
+  nginx:
+    ports: ["80:80"]
+    volumes: ["./nginx/app.conf:/etc/nginx/conf.d/default.conf:ro", "uploads-data:/var/www/uploads:ro"]
+EOF
+    fi
+    echo "   ✅ Nginx configuration and override file generated."
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5. Generate Environment Files (.env & .env.gateway)
+# 5. Generate Secure Environment Files
 # ─────────────────────────────────────────────────────────────────────────────
-echo "✍️  Generating environment files..."
-GENERATED_JWT_SECRET=$(openssl rand -base64 48)
+echo "🔐 Generating secure, random passwords for services..."
+JDBC_PASSWORD=$(openssl rand -base64 16)
+MONGO_PASSWORD=$(openssl rand -base64 16)
+REDIS_PASSWORD=$(openssl rand -base64 16)
+RABBITMQ_PASSWORD=$(openssl rand -base64 16)
+JWT_SECRET=$(openssl rand -base64 48)
+echo "   ✅ Passwords generated."
 
+echo "✍️  Generating environment files..."
 # --- Generate main .env file ---
 cat > "$ENV_FILE" <<EOF
 # Taskbot Production Environment Configuration (Auto-generated)
-# Access URL: ${PUBLIC_URL}
 
 # === Core Application Settings ================================================
 ACTIVE_PROFILE=prod
@@ -262,23 +202,23 @@ FRONT_ENDPOINT=${PUBLIC_URL}
 # === Database (MariaDB) =======================================================
 JDBC_URL=jdbc:mariadb://mariadb:3306/nucleus?zeroDateTimeBehavior=convertToNull&allowMultiQueries=true&useSSL=false&serverTimezone=UTC
 JDBC_USR=taskbot_user
-JDBC_PWD=NETB2023=BaT
+JDBC_PWD=${JDBC_PASSWORD}
 
 # === Database (MongoDB) =======================================================
-SPRING_DATA_MONGODB_URI=mongodb://mymongo:NETaskbotMongoPW@mongodb:27017
+SPRING_DATA_MONGODB_URI=mongodb://mymongo:${MONGO_PASSWORD}@mongodb:27017
 MONGO_INITDB_ROOT_USERNAME=mymongo
-MONGO_INITDB_ROOT_PASSWORD=NETaskbotMongoPW
+MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
 
 # === Redis ====================================================================
 REDIS_HOST=redis
 REDIS_PORT=6379
-REDIS_PWD=Coding^2o2!
+REDIS_PWD=${REDIS_PASSWORD}
 
 # === RabbitMQ =================================================================
 RABBITMQ_HOST=rabbitmq
 RABBITMQ_PORT=5672
 RABBITMQ_USERNAME=rbuser
-RABBITMQ_PASSWORD=NETaskbotRBPWD
+RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD}
 TASK_RUN_REQ_EXCH=kk_task_run_req_exch_prod
 TASK_RUN_REQ_QUEUE=kk_task_run_request_prod
 TASK_RUN_REQ_ROUTE_KEY=run_task_prod
@@ -288,8 +228,8 @@ AGENT_COMMANDS_EXCHANGE=agent_commands_direct_exchange
 
 # === Security & Authentication ================================================
 LICENSE_PUBLIC_KEY_B64=${HARDCODED_LICENSE_PUBLIC_KEY_B64}
-JWT_BASE64_SECRET=${GENERATED_JWT_SECRET}
-JWT_SECRET=${GENERATED_JWT_SECRET}
+JWT_BASE64_SECRET=${JWT_SECRET}
+JWT_SECRET=${JWT_SECRET}
 GOOGLE_OAUTH_ENABLED=false
 
 # === Cloud & Email Services ===================================================
@@ -311,6 +251,22 @@ DATA_PATH_BASE=./taskbot-data
 TASKBOT_API_INTERNAL_PORT=18902
 EOF
 
+# --- Generate .env.frontend file (for the Next.js service) ---
+cat > ".env.frontend" <<EOF
+# Taskbot Frontend Environment Configuration (.env.frontend)
+
+# This tells Next.js to run in production mode.
+NODE_ENV=production
+
+# These are the public variables needed by the browser-side code.
+NEXT_PUBLIC_DEPLOY_MODE=ONPREMISE
+NEXT_PUBLIC_FRONTEND_URL=${PUBLIC_URL}
+NEXT_PUBLIC_API_ENDPOINT_CORE=${PUBLIC_URL}/core
+NEXT_PUBLIC_API_ENDPOINT_DATA=${PUBLIC_URL}/data
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=disabled
+EOF
+echo "   ✅ Frontend .env.frontend file generated."
+
 # --- Generate .env.gateway file ---
 cat > "$GATEWAY_ENV_FILE" <<EOF
 # Gateway Service Environment Configuration (Auto-generated)
@@ -323,7 +279,7 @@ EOF
 echo "   ✅ Environment files generated successfully."
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. Manage Docker Stack
+# 6. & 7. Manage Docker Stack & Final Summary
 # ─────────────────────────────────────────────────────────────────────────────
 echo "🔄 Managing Docker stack..."
 if [ -n "$(docker compose ps -q 2>/dev/null)" ]; then
@@ -342,9 +298,6 @@ else
   exit 1
 fi
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 7. Final Summary
-# ─────────────────────────────────────────────────────────────────────────────
 echo ""
 echo "🎉 Taskbot installation/update is complete!"
 echo "   Your stack is configured for: ${PROTOCOL^^} access."
@@ -352,6 +305,6 @@ echo ""
 echo "🔗 Access your portal at: ${PUBLIC_URL}"
 echo ""
 echo "ℹ️  To view logs: cd ${INSTALL_DIR} && docker compose logs -f"
-echo "ℹ️  To stop: cd ${INSTALL_DIR} && docker compose down"
+echo "🔐 Your auto-generated service passwords have been saved in the .env file."
 echo ""
 echo "Script finished."
