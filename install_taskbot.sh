@@ -142,6 +142,7 @@ server {
     location /agentrtc/ { proxy_pass http://gateway_server; }
     location /agentws/ { proxy_pass http://gateway_server; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
     location /installer/ { proxy_pass http://installer:5001/; }
+    location /api/ { proxy_pass http://frontend_server;}
 }
 EOF
         cat > "$OVERRIDE_FILE" <<EOF
@@ -165,6 +166,7 @@ server {
     location /agentrtc/ { proxy_pass http://gateway_server; }
     location /agentws/ { proxy_pass http://gateway_server; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
     location /installer/ { proxy_pass http://installer:5001/; }
+    location /api/ { proxy_pass http://frontend_server;}
 }
 EOF
         cat > "$OVERRIDE_FILE" <<EOF
