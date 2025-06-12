@@ -2,11 +2,10 @@
 set -euo pipefail
 
 ###############################################################################
-#  Taskbot All-in-One Installer (Environment-Aware) - v2.9                    #
-#  • Fixes 'scratch' image error by using a correct override method.          #
-#  • Fixes missing environment variable warnings by generating all usernames. #
-#  • Ensures all required static and dynamic variables are generated in .env. #
-#  • Asks user if they want to use an existing host Nginx or run a new one.    #
+#  Taskbot All-in-One Installer (Environment-Aware) - v3.1                    #
+#  • Fixes frontend config issue by forcefully injecting environment vars.    #
+#  • Fixes Nginx routing for Next.js API routes.                              #
+#  • Fixes installer routing with correct port and path stripping.            #
 #  • Securely auto-generates all service passwords.                           #
 ###############################################################################
 
@@ -83,15 +82,22 @@ if [[ "$USE_EXISTING_NGINX" =~ ^[Yy]$ ]]; then
 services:
   frontend:
     ports:
-      - "127.0.0.1:3000:3000" # Expose frontend only to the host machine
+      - "127.0.0.1:3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_DEPLOY_MODE=ONPREMISE
+      - NEXT_PUBLIC_FRONTEND_URL=${PUBLIC_URL}
+      - NEXT_PUBLIC_API_ENDPOINT_CORE=${PUBLIC_URL}/core
+      - NEXT_PUBLIC_API_ENDPOINT_DATA=${PUBLIC_URL}/data
+      - NEXT_PUBLIC_FLASK_API_URL=${PUBLIC_URL}/installer
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=disabled
   gateway:
     ports:
-      - "127.0.0.1:8080:8080" # Expose gateway only to the host machine
+      - "127.0.0.1:8080:8080"
   installer:
     ports:
-      - "127.0.0.1:5001:5001"      
+      - "127.0.0.1:5001:5001"
   nginx:
-    # This correctly disables the Nginx service by making it do nothing and exit.
     entrypoint: /bin/true
 EOF
     echo "   ✅ Override file generated. The installer's Nginx container is now disabled."
@@ -103,6 +109,7 @@ EOF
     echo ""
     echo "# --- Start of Taskbot Nginx Configuration ---"
     echo "location / { proxy_pass http://127.0.0.1:3000; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection \"Upgrade\"; }"
+    echo "location /api/ { proxy_pass http://127.0.0.1:3000; proxy_set_header Host \$host; }"
     echo "location /core/ { proxy_pass http://127.0.0.1:8080; }"
     echo "location /agentrtc/ { proxy_pass http://127.0.0.1:8080; }"
     echo "location /installer/ { proxy_pass http://127.0.0.1:5001/; }"
@@ -113,7 +120,7 @@ EOF
     echo "After adding this, test your Nginx config with 'sudo nginx -t' and reload with 'sudo systemctl reload nginx'."
     echo ""
     read -rp "Press [Enter] to acknowledge and continue with the installation."
-    PROTOCOL="https" # Assume integration is always for a secure domain
+    PROTOCOL="https"
 
 else
     # --- STANDALONE MODE ---
@@ -138,15 +145,24 @@ server {
     listen 443 ssl http2; server_name ${PUBLIC_DOMAIN_OR_IP};
     ssl_certificate /etc/nginx/certs/fullchain.pem; ssl_certificate_key /etc/nginx/certs/privkey.pem;
     location / { proxy_pass http://frontend_server; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
+    location /api/ { proxy_pass http://frontend_server; proxy_set_header Host \$host; }
     location /core/ { proxy_pass http://gateway_server; }
     location /agentrtc/ { proxy_pass http://gateway_server; }
     location /agentws/ { proxy_pass http://gateway_server; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
     location /installer/ { proxy_pass http://installer:5001/; }
-    location /api/ { proxy_pass http://frontend_server;}
 }
 EOF
         cat > "$OVERRIDE_FILE" <<EOF
 services:
+  frontend:
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_DEPLOY_MODE=ONPREMISE
+      - NEXT_PUBLIC_FRONTEND_URL=${PUBLIC_URL}
+      - NEXT_PUBLIC_API_ENDPOINT_CORE=${PUBLIC_URL}/core
+      - NEXT_PUBLIC_API_ENDPOINT_DATA=${PUBLIC_URL}/data
+      - NEXT_PUBLIC_FLASK_API_URL=${PUBLIC_URL}/installer
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=disabled
   nginx:
     ports: ["80:80", "443:443"]
     volumes: ["./nginx/app.conf:/etc/nginx/conf.d/default.conf:ro", "${CERT_PATH}:/etc/nginx/certs/fullchain.pem:ro", "${KEY_PATH}:/etc/nginx/certs/privkey.pem:ro", "uploads-data:/var/www/uploads:ro"]
@@ -162,15 +178,24 @@ upstream gateway_server { server gateway:8080; }
 server {
     listen 80; server_name ${PUBLIC_DOMAIN_OR_IP};
     location / { proxy_pass http://frontend_server; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
+    location /api/ { proxy_pass http://frontend_server; proxy_set_header Host \$host; }
     location /core/ { proxy_pass http://gateway_server; }
     location /agentrtc/ { proxy_pass http://gateway_server; }
     location /agentws/ { proxy_pass http://gateway_server; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
     location /installer/ { proxy_pass http://installer:5001/; }
-    location /api/ { proxy_pass http://frontend_server;}
 }
 EOF
         cat > "$OVERRIDE_FILE" <<EOF
 services:
+  frontend:
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_DEPLOY_MODE=ONPREMISE
+      - NEXT_PUBLIC_FRONTEND_URL=${PUBLIC_URL}
+      - NEXT_PUBLIC_API_ENDPOINT_CORE=${PUBLIC_URL}/core
+      - NEXT_PUBLIC_API_ENDPOINT_DATA=${PUBLIC_URL}/data
+      - NEXT_PUBLIC_FLASK_API_URL=${PUBLIC_URL}/installer
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=disabled
   nginx:
     ports: ["80:80"]
     volumes: ["./nginx/app.conf:/etc/nginx/conf.d/default.conf:ro", "uploads-data:/var/www/uploads:ro"]
@@ -187,41 +212,35 @@ JDBC_PASSWORD=$(openssl rand -hex 16)
 MONGO_PASSWORD=$(openssl rand -hex 16)
 REDIS_PASSWORD=$(openssl rand -hex 16)
 RABBITMQ_PASSWORD=$(openssl rand -hex 16)
-JWT_SECRET=$(openssl rand -hex 48) # hex is also safer here
+JWT_SECRET=$(openssl rand -hex 48)
 echo "   ✅ Passwords generated."
 
 echo "✍️  Generating environment files..."
 # --- Generate main .env file ---
 cat > "$ENV_FILE" <<EOF
 # Taskbot Production Environment Configuration (Auto-generated)
-
 # === Core Application Settings ================================================
 ACTIVE_PROFILE=prod
 LOG_LEVEL=INFO
 SERVER_PORT=18902
 RUNNING_ON_CLUSTER=false
-
 # === Endpoints & Public Domain ================================================
 PUBLIC_DOMAIN=${PUBLIC_URL}
 DATA_API_ENDPOINT=http://taskbot-api-service:8080
 CORE_API_ENDPOINT=http://taskbot-api-service:18902
 FRONT_ENDPOINT=${PUBLIC_URL}
-
 # === Database (MariaDB) =======================================================
 JDBC_URL=jdbc:mariadb://mariadb:3306/nucleus?zeroDateTimeBehavior=convertToNull&allowMultiQueries=true&useSSL=false&serverTimezone=UTC
 JDBC_USR=taskbot_user
 JDBC_PWD=${JDBC_PASSWORD}
-
 # === Database (MongoDB) =======================================================
 SPRING_DATA_MONGODB_URI=mongodb://mymongo:${MONGO_PASSWORD}@mongodb:27017
 MONGO_INITDB_ROOT_USERNAME=mymongo
 MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
-
 # === Redis ====================================================================
 REDIS_HOST=redis
 REDIS_PORT=6379
 REDIS_PWD=${REDIS_PASSWORD}
-
 # === RabbitMQ =================================================================
 RABBITMQ_HOST=rabbitmq
 RABBITMQ_PORT=5672
@@ -233,25 +252,20 @@ TASK_RUN_REQ_ROUTE_KEY=run_task_prod
 AGENT_RUN_EVENTS_TOPIC_EXCHANGE=agent_run_events_topic_exchange
 MONGO_LOGGER_QUEUE=mongo_event_logger_queue
 AGENT_COMMANDS_EXCHANGE=agent_commands_direct_exchange
-
 # === Security & Authentication ================================================
 LICENSE_PUBLIC_KEY_B64=${HARDCODED_LICENSE_PUBLIC_KEY_B64}
 JWT_BASE64_SECRET=${JWT_SECRET}
 JWT_SECRET=${JWT_SECRET}
 GOOGLE_OAUTH_ENABLED=false
-
 # === Cloud & Email Services ===================================================
 aws.s3.enabled=false
-
 # === Local Storage (For Docker) ===============================================
 storage.local.path=/storage/uploads
-
 # === Branding =================================================================
 company.name=Nucleus AI
 email.logo.url=${PUBLIC_URL}/images/logo.png
 email.branding.image.url=${PUBLIC_URL}/images/headerbg.png
 website.link=${PUBLIC_URL}
-
 # === Other service variables needed by docker-compose.yml =====================
 TASKBOT_DEPLOY_MODE=ONPREMISE
 FLASK_RUN_PORT=5001
@@ -259,23 +273,7 @@ DATA_PATH_BASE=./taskbot-data
 TASKBOT_API_INTERNAL_PORT=18902
 CORS_ORIGINS=${PUBLIC_URL}
 EOF
-
-# --- Generate .env.frontend file (for the Next.js service) ---
-cat > ".env.frontend" <<EOF
-# Taskbot Frontend Environment Configuration (.env.frontend)
-
-# This tells Next.js to run in production mode.
-NODE_ENV=production
-
-# These are the public variables needed by the browser-side code.
-NEXT_PUBLIC_DEPLOY_MODE=ONPREMISE
-NEXT_PUBLIC_FRONTEND_URL=${PUBLIC_URL}
-NEXT_PUBLIC_API_ENDPOINT_CORE=${PUBLIC_URL}/core
-NEXT_PUBLIC_API_ENDPOINT_DATA=${PUBLIC_URL}/data
-NEXT_PUBLIC_FLASK_API_URL=${PUBLIC_URL}/installer
-NEXT_PUBLIC_GOOGLE_CLIENT_ID=disabled
-EOF
-echo "   ✅ Frontend .env.frontend file generated."
+echo "   ✅ Main .env file generated."
 
 # --- Generate .env.gateway file ---
 cat > "$GATEWAY_ENV_FILE" <<EOF
@@ -286,7 +284,7 @@ REDIS_PASSWORD=\${REDIS_PWD}
 CORE_API_URL=http://taskbot-api-service:18902
 JWT_SECRET=\${JWT_SECRET}
 EOF
-echo "   ✅ Environment files generated successfully."
+echo "   ✅ Gateway .env.gateway file generated."
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. & 7. Manage Docker Stack & Final Summary

@@ -5,8 +5,14 @@ services:
   frontend:
     image: neaitaskbot/taskbot-portal:1.0
     container_name: taskbot-frontend
-    env_file:
-      - .env.frontend
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_DEPLOY_MODE=ONPREMISE
+      - NEXT_PUBLIC_FRONTEND_URL=${PUBLIC_URL}
+      - NEXT_PUBLIC_API_ENDPOINT_CORE=${PUBLIC_URL}/core
+      - NEXT_PUBLIC_API_ENDPOINT_DATA=${PUBLIC_URL}/data
+      - NEXT_PUBLIC_FLASK_API_URL=${PUBLIC_URL}/installer
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=disabled
     logging:
       driver: "json-file"
       options:
