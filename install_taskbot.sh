@@ -2,9 +2,9 @@
 set -euo pipefail
 
 ###############################################################################
-#  Taskbot All-in-One Installer (Environment-Aware) - v9.0 (Definitive)       #
-#  • Restores all essential RabbitMQ and frontend environment variables.      #
-#  • All previous fixes for Nginx, gateway, and installer are included.       #
+#  Taskbot All-in-One Installer (Environment-Aware) - v10.0 (Final Fix)       #
+#  • Adds 'proxy_set_header Host $host' to all gateway routes in Nginx.       #
+#  • All previous fixes for frontend, installer, and gateway ports included.  #
 ###############################################################################
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -97,9 +97,9 @@ EOF
     echo "# --- Start of Taskbot Nginx Configuration ---"
     echo "location = /api/config { root /path/to/your/www; try_files /frontend_config.json =404; add_header Content-Type application/json; }"
     echo "location / { proxy_pass http://127.0.0.1:3000; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection \"Upgrade\"; }"
-    echo "location /core/ { proxy_pass http://127.0.0.1:8808; }"
-    echo "location /agentrtc/ { proxy_pass http://127.0.0.1:8808; }"
-    echo "location /agentws/ { proxy_pass http://127.0.0.1:8808; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection \"Upgrade\"; }"
+    echo "location /core/ { proxy_pass http://127.0.0.1:8808; proxy_set_header Host \$host; }"
+    echo "location /agentrtc/ { proxy_pass http://127.0.0.1:8808; proxy_set_header Host \$host; }"
+    echo "location /agentws/ { proxy_pass http://127.0.0.1:8808; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection \"Upgrade\"; }"
     echo "location /installer/ { proxy_pass http://127.0.0.1:5001/; }"
     echo "# --- End of Taskbot Nginx Configuration ---"
     echo ""
@@ -130,9 +130,9 @@ server {
     ssl_certificate /etc/nginx/certs/fullchain.pem; ssl_certificate_key /etc/nginx/certs/privkey.pem;
     location = /api/config { alias /etc/nginx/conf.d/frontend_config.json; add_header Content-Type application/json; }
     location / { proxy_pass http://frontend_server; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
-    location /core/ { proxy_pass http://gateway_server; }
-    location /agentrtc/ { proxy_pass http://gateway_server; }
-    location /agentws/ { proxy_pass http://gateway_server; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
+    location /core/ { proxy_pass http://gateway_server; proxy_set_header Host \$host; }
+    location /agentrtc/ { proxy_pass http://gateway_server; proxy_set_header Host \$host; }
+    location /agentws/ { proxy_pass http://gateway_server; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
     location /installer/ { proxy_pass http://installer:5001/; }
 }
 EOF
@@ -158,9 +158,9 @@ server {
     listen 80; server_name ${PUBLIC_DOMAIN_OR_IP};
     location = /api/config { alias /etc/nginx/conf.d/frontend_config.json; add_header Content-Type application/json; }
     location / { proxy_pass http://frontend_server; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
-    location /core/ { proxy_pass http://gateway_server; }
-    location /agentrtc/ { proxy_pass http://gateway_server; }
-    location /agentws/ { proxy_pass http://gateway_server; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
+    location /core/ { proxy_pass http://gateway_server; proxy_set_header Host \$host; }
+    location /agentrtc/ { proxy_pass http://gateway_server; proxy_set_header Host \$host; }
+    location /agentws/ { proxy_pass http://gateway_server; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
     location /installer/ { proxy_pass http://installer:5001/; }
 }
 EOF
@@ -222,18 +222,12 @@ FRONT_ENDPOINT=${PUBLIC_URL}
 JDBC_URL=jdbc:mariadb://mariadb:3306/nucleus?zeroDateTimeBehavior=convertToNull&allowMultiQueries=true&useSSL=false&serverTimezone=UTC
 JDBC_USR=taskbot_user
 JDBC_PWD=${JDBC_PASSWORD}
-
-# === Database (MongoDB) =======================================================
 SPRING_DATA_MONGODB_URI=mongodb://mymongo:${MONGO_PASSWORD}@mongodb:27017
 MONGO_INITDB_ROOT_USERNAME=mymongo
 MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
-
-# === Redis ====================================================================
 REDIS_HOST=redis
 REDIS_PORT=6379
 REDIS_PWD=${REDIS_PASSWORD}
-
-# === RabbitMQ =================================================================
 RABBITMQ_HOST=rabbitmq
 RABBITMQ_PORT=5672
 RABBITMQ_USERNAME=rbuser
@@ -244,8 +238,6 @@ TASK_RUN_REQ_ROUTE_KEY=run_task_prod
 AGENT_RUN_EVENTS_TOPIC_EXCHANGE=agent_run_events_topic_exchange
 MONGO_LOGGER_QUEUE=mongo_event_logger_queue
 AGENT_COMMANDS_EXCHANGE=agent_commands_direct_exchange
-
-# === Security & Authentication ================================================
 LICENSE_PUBLIC_KEY_B64=${HARDCODED_LICENSE_PUBLIC_KEY_B64}
 JWT_BASE64_SECRET=${JWT_SECRET}
 JWT_SECRET=${JWT_SECRET}
@@ -266,9 +258,9 @@ website.link=${PUBLIC_URL}
 # === Other service variables needed by docker-compose.yml =====================
 TASKBOT_DEPLOY_MODE=ONPREMISE
 FLASK_RUN_PORT=5001
-DATA_PATH_BASE=./taskbot-data
-TASKBOT_API_INTERNAL_PORT=18902
 CORS_ORIGINS=${PUBLIC_URL}
+CORE_API_ENDPOINT=http://taskbot-api-service:18902
+DATA_API_ENDPOINT=http://gateway:8808
 EOF
 echo "   ✅ Main .env file generated."
 
