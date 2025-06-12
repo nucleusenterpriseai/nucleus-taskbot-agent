@@ -26,6 +26,8 @@ services:
       DATABASE_URL: sqlite:////data/installer.db
       SSH_KEY_PATH: /data/ssh_keys      
       CORS_ORIGINS: ${CORS_ORIGINS}
+    ports:
+      - "127.0.0.1:5001:5001"
     volumes:
       - installer-data:/data
       - ./keys:/etc/taskbot/keys:ro
