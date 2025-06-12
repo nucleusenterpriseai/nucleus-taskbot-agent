@@ -86,7 +86,7 @@ services:
       - "127.0.0.1:3000:3000" # Expose frontend only to the host machine
   gateway:
     ports:
-      - "127.0.0.1:8080:8080" # Expose gateway only to the host machine
+      - "127.0.0.1:8808:8808" # Expose gateway only to the host machine
   installer:
     ports:
       - "127.0.0.1:5001:5001"      
@@ -103,10 +103,10 @@ EOF
     echo ""
     echo "# --- Start of Taskbot Nginx Configuration ---"
     echo "location / { proxy_pass http://127.0.0.1:3000; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection \"Upgrade\"; }"
-    echo "location /core/ { proxy_pass http://127.0.0.1:8080; }"
-    echo "location /agentrtc/ { proxy_pass http://127.0.0.1:8080; }"
+    echo "location /core/ { proxy_pass http://127.0.0.1:8808; }"
+    echo "location /agentrtc/ { proxy_pass http://127.0.0.1:8808; }"
     echo "location /installer/ { proxy_pass http://127.0.0.1:5001/; }"
-    echo "location /agentws/ { proxy_pass http://127.0.0.1:8080; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection \"Upgrade\"; }"
+    echo "location /agentws/ { proxy_pass http://127.0.0.1:8808; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection \"Upgrade\"; }"
     echo "# --- End of Taskbot Nginx Configuration ---"
     echo ""
     echo "------------------------------------------------------------------"
@@ -132,7 +132,7 @@ else
         cat > "$NGINX_CONF_OUTPUT" <<EOF
 # Nginx configuration for HTTPS (Auto-generated)
 upstream frontend_server { server frontend:3000; }
-upstream gateway_server { server gateway:8080; }
+upstream gateway_server { server gateway:8808; }
 server { listen 80; server_name ${PUBLIC_DOMAIN_OR_IP}; return 301 https://\$host\$request_uri; }
 server {
     listen 443 ssl http2; server_name ${PUBLIC_DOMAIN_OR_IP};
@@ -158,7 +158,7 @@ EOF
         cat > "$NGINX_CONF_OUTPUT" <<EOF
 # Nginx configuration for HTTP (Auto-generated)
 upstream frontend_server { server frontend:3000; }
-upstream gateway_server { server gateway:8080; }
+upstream gateway_server { server gateway:8808; }
 server {
     listen 80; server_name ${PUBLIC_DOMAIN_OR_IP};
     location / { proxy_pass http://frontend_server; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
