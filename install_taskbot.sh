@@ -87,6 +87,9 @@ services:
   gateway:
     ports:
       - "127.0.0.1:8080:8080" # Expose gateway only to the host machine
+  installer:
+    ports:
+      - "127.0.0.1:5000:5000"      
   nginx:
     # This correctly disables the Nginx service by making it do nothing and exit.
     entrypoint: /bin/true
@@ -102,6 +105,7 @@ EOF
     echo "location / { proxy_pass http://127.0.0.1:3000; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection \"Upgrade\"; }"
     echo "location /core/ { proxy_pass http://127.0.0.1:8080; }"
     echo "location /agentrtc/ { proxy_pass http://127.0.0.1:8080; }"
+    echo "location /installer/ { proxy_pass http://127.0.0.1:5000; }"
     echo "location /agentws/ { proxy_pass http://127.0.0.1:8080; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection \"Upgrade\"; }"
     echo "# --- End of Taskbot Nginx Configuration ---"
     echo ""
@@ -137,6 +141,7 @@ server {
     location /core/ { proxy_pass http://gateway_server; }
     location /agentrtc/ { proxy_pass http://gateway_server; }
     location /agentws/ { proxy_pass http://gateway_server; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
+    location /installer/ { proxy_pass http://installer:5000; }
 }
 EOF
         cat > "$OVERRIDE_FILE" <<EOF
@@ -159,6 +164,7 @@ server {
     location /core/ { proxy_pass http://gateway_server; }
     location /agentrtc/ { proxy_pass http://gateway_server; }
     location /agentws/ { proxy_pass http://gateway_server; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
+    location /installer/ { proxy_pass http://installer:5000; }
 }
 EOF
         cat > "$OVERRIDE_FILE" <<EOF
