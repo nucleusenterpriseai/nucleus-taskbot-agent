@@ -2,12 +2,9 @@
 set -euo pipefail
 
 ###############################################################################
-#  Taskbot All-in-One Installer (Environment-Aware) - v2.9                    #
-#  • Fixes 'scratch' image error by using a correct override method.          #
-#  • Fixes missing environment variable warnings by generating all usernames. #
-#  • Ensures all required static and dynamic variables are generated in .env. #
-#  • Asks user if they want to use an existing host Nginx or run a new one.    #
-#  • Securely auto-generates all service passwords.                           #
+#  Taskbot All-in-One Installer (Environment-Aware) - v9.0 (Definitive)       #
+#  • Restores all essential RabbitMQ and frontend environment variables.      #
+#  • All previous fixes for Nginx, gateway, and installer are included.       #
 ###############################################################################
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -16,6 +13,7 @@ set -euo pipefail
 COMPOSE_FILE="docker-compose.yml"
 OVERRIDE_FILE="docker-compose.override.yml"
 NGINX_CONF_OUTPUT="nginx/app.conf"
+NGINX_FRONTEND_CONFIG_JSON="nginx/frontend_config.json"
 ENV_FILE=".env"
 GATEWAY_ENV_FILE=".env.gateway"
 
@@ -82,38 +80,31 @@ if [[ "$USE_EXISTING_NGINX" =~ ^[Yy]$ ]]; then
 # This file is auto-generated to expose internal services to your host Nginx.
 services:
   frontend:
-    ports:
-      - "127.0.0.1:3000:3000" # Expose frontend only to the host machine
+    ports: ["127.0.0.1:3000:3000"]
   gateway:
-    ports:
-      - "127.0.0.1:8808:8808" # Expose gateway only to the host machine
+    ports: ["127.0.0.1:8808:8808"]
   installer:
-    ports:
-      - "127.0.0.1:5001:5001"      
+    ports: ["127.0.0.1:5001:5001"]
   nginx:
-    # This correctly disables the Nginx service by making it do nothing and exit.
     entrypoint: /bin/true
 EOF
-    echo "   ✅ Override file generated. The installer's Nginx container is now disabled."
+    echo "   ✅ Override file generated."
 
     echo ""
     echo "⚠️  ACTION REQUIRED: Add the following configuration to your HOST's Nginx setup."
-    echo "   (e.g., inside a 'server' block in /etc/nginx/sites-available/your-site.conf)"
+    echo "   You must also manually create the JSON file referenced in the '/api/config' block."
     echo "------------------------------------------------------------------"
-    echo ""
     echo "# --- Start of Taskbot Nginx Configuration ---"
+    echo "location = /api/config { root /path/to/your/www; try_files /frontend_config.json =404; add_header Content-Type application/json; }"
     echo "location / { proxy_pass http://127.0.0.1:3000; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection \"Upgrade\"; }"
     echo "location /core/ { proxy_pass http://127.0.0.1:8808; }"
     echo "location /agentrtc/ { proxy_pass http://127.0.0.1:8808; }"
-    echo "location /installer/ { proxy_pass http://127.0.0.1:5001/; }"
     echo "location /agentws/ { proxy_pass http://127.0.0.1:8808; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection \"Upgrade\"; }"
+    echo "location /installer/ { proxy_pass http://127.0.0.1:5001/; }"
     echo "# --- End of Taskbot Nginx Configuration ---"
     echo ""
-    echo "------------------------------------------------------------------"
-    echo "After adding this, test your Nginx config with 'sudo nginx -t' and reload with 'sudo systemctl reload nginx'."
-    echo ""
     read -rp "Press [Enter] to acknowledge and continue with the installation."
-    PROTOCOL="https" # Assume integration is always for a secure domain
+    PROTOCOL="https"
 
 else
     # --- STANDALONE MODE ---
@@ -137,19 +128,23 @@ server { listen 80; server_name ${PUBLIC_DOMAIN_OR_IP}; return 301 https://\$hos
 server {
     listen 443 ssl http2; server_name ${PUBLIC_DOMAIN_OR_IP};
     ssl_certificate /etc/nginx/certs/fullchain.pem; ssl_certificate_key /etc/nginx/certs/privkey.pem;
+    location = /api/config { alias /etc/nginx/conf.d/frontend_config.json; add_header Content-Type application/json; }
     location / { proxy_pass http://frontend_server; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
     location /core/ { proxy_pass http://gateway_server; }
     location /agentrtc/ { proxy_pass http://gateway_server; }
     location /agentws/ { proxy_pass http://gateway_server; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
     location /installer/ { proxy_pass http://installer:5001/; }
-    location /api/ { proxy_pass http://frontend_server;}
 }
 EOF
         cat > "$OVERRIDE_FILE" <<EOF
 services:
   nginx:
     ports: ["80:80", "443:443"]
-    volumes: ["./nginx/app.conf:/etc/nginx/conf.d/default.conf:ro", "${CERT_PATH}:/etc/nginx/certs/fullchain.pem:ro", "${KEY_PATH}:/etc/nginx/certs/privkey.pem:ro", "uploads-data:/var/www/uploads:ro"]
+    volumes:
+      - ./nginx/app.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./${NGINX_FRONTEND_CONFIG_JSON}:/etc/nginx/conf.d/frontend_config.json:ro
+      - "${CERT_PATH}:/etc/nginx/certs/fullchain.pem:ro"
+      - "${KEY_PATH}:/etc/nginx/certs/privkey.pem:ro"
 EOF
     else
         PROTOCOL="http"
@@ -161,19 +156,21 @@ upstream frontend_server { server frontend:3000; }
 upstream gateway_server { server gateway:8808; }
 server {
     listen 80; server_name ${PUBLIC_DOMAIN_OR_IP};
+    location = /api/config { alias /etc/nginx/conf.d/frontend_config.json; add_header Content-Type application/json; }
     location / { proxy_pass http://frontend_server; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
     location /core/ { proxy_pass http://gateway_server; }
     location /agentrtc/ { proxy_pass http://gateway_server; }
     location /agentws/ { proxy_pass http://gateway_server; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
     location /installer/ { proxy_pass http://installer:5001/; }
-    location /api/ { proxy_pass http://frontend_server;}
 }
 EOF
         cat > "$OVERRIDE_FILE" <<EOF
 services:
   nginx:
     ports: ["80:80"]
-    volumes: ["./nginx/app.conf:/etc/nginx/conf.d/default.conf:ro", "uploads-data:/var/www/uploads:ro"]
+    volumes:
+      - ./nginx/app.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./${NGINX_FRONTEND_CONFIG_JSON}:/etc/nginx/conf.d/frontend_config.json:ro
 EOF
     fi
     echo "   ✅ Nginx configuration and override file generated."
@@ -187,11 +184,25 @@ JDBC_PASSWORD=$(openssl rand -hex 16)
 MONGO_PASSWORD=$(openssl rand -hex 16)
 REDIS_PASSWORD=$(openssl rand -hex 16)
 RABBITMQ_PASSWORD=$(openssl rand -hex 16)
-JWT_SECRET=$(openssl rand -hex 48) # hex is also safer here
+JWT_SECRET=$(openssl rand -hex 48)
 echo "   ✅ Passwords generated."
 
 echo "✍️  Generating environment files..."
-# --- Generate main .env file ---
+
+# Generate the static JSON config file that Nginx will serve.
+cat > "$NGINX_FRONTEND_CONFIG_JSON" <<EOF
+{
+    "NEXT_PUBLIC_FLASK_API_URL": "${PUBLIC_URL}/installer",
+    "NEXT_PUBLIC_API_ENDPOINT_CORE": "${PUBLIC_URL}/core",
+    "NEXT_PUBLIC_API_ENDPOINT_DATA": "${PUBLIC_URL}/data",
+    "NEXT_PUBLIC_FRONTEND_URL": "${PUBLIC_URL}",
+    "NEXT_PUBLIC_DEPLOY_MODE": "ONPREMISE",
+    "NEXT_PUBLIC_GOOGLE_CLIENT_ID": "disabled"
+}
+EOF
+echo "   ✅ Frontend static config JSON generated."
+
+# Generate main .env file
 cat > "$ENV_FILE" <<EOF
 # Taskbot Production Environment Configuration (Auto-generated)
 
@@ -203,7 +214,7 @@ RUNNING_ON_CLUSTER=false
 
 # === Endpoints & Public Domain ================================================
 PUBLIC_DOMAIN=${PUBLIC_URL}
-DATA_API_ENDPOINT=http://taskbot-api-service:8080
+DATA_API_ENDPOINT=http://gateway:8808
 CORE_API_ENDPOINT=http://taskbot-api-service:18902
 FRONT_ENDPOINT=${PUBLIC_URL}
 
@@ -259,15 +270,16 @@ DATA_PATH_BASE=./taskbot-data
 TASKBOT_API_INTERNAL_PORT=18902
 CORS_ORIGINS=${PUBLIC_URL}
 EOF
+echo "   ✅ Main .env file generated."
 
 # --- Generate .env.frontend file (for the Next.js service) ---
+# We generate this file to prevent a harmless warning from Docker Compose,
+# even though our Nginx Intercept strategy makes its contents irrelevant.
 cat > ".env.frontend" <<EOF
 # Taskbot Frontend Environment Configuration (.env.frontend)
-
-# This tells Next.js to run in production mode.
+# This file is generated to satisfy the docker-compose.yml 'env_file' directive.
+# The actual configuration is served statically by Nginx via frontend_config.json.
 NODE_ENV=production
-
-# These are the public variables needed by the browser-side code.
 NEXT_PUBLIC_DEPLOY_MODE=ONPREMISE
 NEXT_PUBLIC_FRONTEND_URL=${PUBLIC_URL}
 NEXT_PUBLIC_API_ENDPOINT_CORE=${PUBLIC_URL}/core
@@ -277,16 +289,16 @@ NEXT_PUBLIC_GOOGLE_CLIENT_ID=disabled
 EOF
 echo "   ✅ Frontend .env.frontend file generated."
 
-# --- Generate .env.gateway file ---
+# Generate .env.gateway file
 cat > "$GATEWAY_ENV_FILE" <<EOF
 # Gateway Service Environment Configuration (Auto-generated)
 REDIS_HOST=redis
 REDIS_PORT=6379
-REDIS_PASSWORD=\${REDIS_PWD}
+REDIS_PASSWORD=${REDIS_PASSWORD}
 CORE_API_URL=http://taskbot-api-service:18902
-JWT_SECRET=\${JWT_SECRET}
+JWT_SECRET=${JWT_SECRET}
 EOF
-echo "   ✅ Environment files generated successfully."
+echo "   ✅ Gateway .env.gateway file generated."
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. & 7. Manage Docker Stack & Final Summary
