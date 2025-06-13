@@ -177,7 +177,7 @@ EOF
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5. Generate Secure Environment Files
+# 5. Configure Service Credentials & Initial Admin User
 # ─────────────────────────────────────────────────────────────────────────────
 echo "🔐 Generating secure, random passwords for services..."
 JDBC_PASSWORD=$(openssl rand -hex 16)
@@ -186,6 +186,31 @@ REDIS_PASSWORD=$(openssl rand -hex 16)
 RABBITMQ_PASSWORD=$(openssl rand -hex 16)
 JWT_SECRET=$(openssl rand -hex 48)
 echo "   ✅ Passwords generated."
+
+echo "------------------------------------------------------------------"
+echo "👤 Initial Admin User Configuration"
+echo "   These details will be used to create the first admin user for the Taskbot API service."
+echo "   Default values are shown in brackets []."
+echo "------------------------------------------------------------------"
+read -rp "Enter initial admin email [admin@example.com]: " SCRIPT_INITIAL_ADMIN_EMAIL
+INITIAL_ADMIN_EMAIL_ENV=${SCRIPT_INITIAL_ADMIN_EMAIL:-admin@example.com}
+
+read -srp "Enter initial admin password (use a strong password) [SecureAdminP@ss1]: " SCRIPT_INITIAL_ADMIN_PASSWORD
+echo # Newline after password input
+INITIAL_ADMIN_PASSWORD_ENV=${SCRIPT_INITIAL_ADMIN_PASSWORD:-SecureAdminP@ss1}
+
+read -rp "Enter initial admin first name [Admin]: " SCRIPT_INITIAL_ADMIN_FIRST_NAME
+INITIAL_ADMIN_FIRST_NAME_ENV=${SCRIPT_INITIAL_ADMIN_FIRST_NAME:-Admin}
+
+read -rp "Enter initial admin last name [User]: " SCRIPT_INITIAL_ADMIN_LAST_NAME
+INITIAL_ADMIN_LAST_NAME_ENV=${SCRIPT_INITIAL_ADMIN_LAST_NAME:-User}
+
+read -rp "Enter initial admin organization name [Default Organization]: " SCRIPT_INITIAL_ADMIN_ORG_NAME
+INITIAL_ADMIN_ORG_NAME_ENV=${SCRIPT_INITIAL_ADMIN_ORG_NAME:-Default Organization}
+
+# For app.setup.initial-admin.enabled, it defaults to 'true' as per Spring Boot config.
+# We'll explicitly set it in .env for clarity.
+INITIAL_ADMIN_ENABLED_ENV="true"
 
 echo "✍️  Generating environment files..."
 
@@ -244,6 +269,17 @@ JWT_SECRET=${JWT_SECRET}
 GOOGLE_OAUTH_ENABLED=false
 
 # === Cloud & Email Services ===================================================
+# aws.s3.enabled=false # This line seems duplicated below, ensure one is correct
+
+# === Initial Admin Setup (for taskbot-api-service) ============================
+INITIAL_ADMIN_ENABLED=${INITIAL_ADMIN_ENABLED_ENV}
+INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL_ENV}
+INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD_ENV}
+INITIAL_ADMIN_FIRST_NAME=${INITIAL_ADMIN_FIRST_NAME_ENV}
+INITIAL_ADMIN_LAST_NAME=${INITIAL_ADMIN_LAST_NAME_ENV}
+INITIAL_ADMIN_ORG_NAME=${INITIAL_ADMIN_ORG_NAME_ENV}
+
+# === Cloud & Email Services ===================================================
 aws.s3.enabled=false
 
 # === Local Storage (For Docker) ===============================================
@@ -265,7 +301,7 @@ EOF
 echo "   ✅ Main .env file generated."
 
 # --- Generate .env.frontend file (for the Next.js service) ---
-# We generate this file to prevent a harmless warning from Docker Compose,
+# We generate this file to prevent a warning from Docker Compose,
 # even though our Nginx Intercept strategy makes its contents irrelevant.
 cat > ".env.frontend" <<EOF
 # Taskbot Frontend Environment Configuration (.env.frontend)
@@ -293,7 +329,7 @@ EOF
 echo "   ✅ Gateway .env.gateway file generated."
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. & 7. Manage Docker Stack & Final Summary
+# 6. Manage Docker Stack & Final Summary
 # ─────────────────────────────────────────────────────────────────────────────
 echo "🔄 Managing Docker stack..."
 if [ -n "$(docker compose ps -q 2>/dev/null)" ]; then
