@@ -19,9 +19,12 @@ if [ -d "${INSTALL_DIR}" ]; then
     read -rp "Do you want to COMPLETELY REMOVE the existing installation (including all data) and start fresh? (y/n): " CONFIRM
     if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
         echo "   -> User confirmed cleanup."
-        echo "   Shutting down existing services and removing volumes..."
-        # Use a subshell to run compose down from the correct directory without changing our current path
-        (cd "${INSTALL_DIR}" && docker compose down --volumes) || echo "   (Could not run 'docker compose down'. This is OK if the directory is corrupted. Continuing cleanup.)"
+        echo "   Shutting down existing services from '${INSTALL_DIR}' (warnings are suppressed)..."
+        
+        # Use a subshell to safely 'cd' into the directory and run 'down'.
+        # This is the correct way to ensure 'docker compose' finds its yml file.
+        # Output is redirected to /dev/null to prevent noisy warnings from missing .env files.
+        (cd "${INSTALL_DIR}" && docker compose down --volumes) >/dev/null 2>&1 || echo "   (Note: 'docker compose down' did not complete cleanly. This is often OK if the installation was partial or corrupted. Proceeding with cleanup.)"
         
         echo "   Removing old installation directory..."
         # The script is run with sudo, so we need sudo to remove the directory it created
