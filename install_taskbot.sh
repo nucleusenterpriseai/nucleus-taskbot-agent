@@ -2,10 +2,36 @@
 set -euo pipefail
 
 ###############################################################################
-#  Taskbot All-in-One Installer (Environment-Aware) - v10.0 (Final Fix)       #
+#  Taskbot All-in-One Installer (Environment-Aware) - v11.0 (Cleanup)         #
+#  • Adds interactive cleanup of previous installations.                      #
 #  • Adds 'proxy_set_header Host $host' to all gateway routes in Nginx.       #
 #  • All previous fixes for frontend, installer, and gateway ports included.  #
 ###############################################################################
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 0. Cleanup Previous Installation (If it exists)
+# ─────────────────────────────────────────────────────────────────────────────
+INSTALL_DIR_NAME="taskbot_deployment"
+INSTALL_DIR="$(pwd)/${INSTALL_DIR_NAME}"
+
+if [ -d "${INSTALL_DIR}" ]; then
+    echo "⚠️  An existing Taskbot installation was found at: ${INSTALL_DIR}"
+    read -rp "Do you want to COMPLETELY REMOVE the existing installation (including all data) and start fresh? (y/n): " CONFIRM
+    if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+        echo "   -> User confirmed cleanup."
+        echo "   Shutting down existing services and removing volumes..."
+        # Use a subshell to run compose down from the correct directory without changing our current path
+        (cd "${INSTALL_DIR}" && docker compose down --volumes) || echo "   (Could not run 'docker compose down'. This is OK if the directory is corrupted. Continuing cleanup.)"
+        
+        echo "   Removing old installation directory..."
+        # The script is run with sudo, so we need sudo to remove the directory it created
+        sudo rm -rf "${INSTALL_DIR}"
+        echo "✅ Previous installation cleaned up successfully."
+    else
+        echo "❌ Aborting installation as requested. Your existing data is safe."
+        exit 0
+    fi
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
@@ -16,9 +42,6 @@ NGINX_CONF_OUTPUT="nginx/app.conf"
 NGINX_FRONTEND_CONFIG_JSON="nginx/frontend_config.json"
 ENV_FILE=".env"
 GATEWAY_ENV_FILE=".env.gateway"
-
-INSTALL_DIR="$(pwd)/taskbot_deployment"
-
 
 echo "📦 Taskbot installer starting …"
 echo "   Installation directory: ${INSTALL_DIR}"
@@ -33,7 +56,7 @@ if ! command -v docker &>/dev/null; then
   curl -fsSL https://get.docker.com | sh || { echo "❌ Docker installation failed." >&2; exit 1; }
   TARGET_USER=${SUDO_USER:-$USER}
   sudo usermod -aG docker "$TARGET_USER"
-  echo "✅ Docker installed."
+  echo "✅ Docker installed. IMPORTANT: The current user ($TARGET_USER) was added to the 'docker' group. You may need to log out and log back in for this to take full effect."
 else
   echo "✅ Docker is already installed."
 fi
@@ -86,7 +109,8 @@ services:
   installer:
     ports: ["127.0.0.1:5001:5001"]
   nginx:
-    entrypoint: /bin/true
+    image: alpine:latest
+    entrypoint: ["/bin/sh", "-c", "echo 'Nginx is disabled in integration mode. Your host Nginx is responsible for routing.'; sleep 3600"]
 EOF
     echo "   ✅ Override file generated."
 
@@ -124,6 +148,7 @@ else
 # Nginx configuration for HTTPS (Auto-generated)
 upstream frontend_server { server frontend:3000; }
 upstream gateway_server { server gateway:8808; }
+upstream installer_server { server installer:5001; }
 server { listen 80; server_name ${PUBLIC_DOMAIN_OR_IP}; return 301 https://\$host\$request_uri; }
 server {
     listen 443 ssl http2; server_name ${PUBLIC_DOMAIN_OR_IP};
@@ -133,7 +158,7 @@ server {
     location /core/ { proxy_pass http://gateway_server; proxy_set_header Host \$host; }
     location /agentrtc/ { proxy_pass http://gateway_server; proxy_set_header Host \$host; }
     location /agentws/ { proxy_pass http://gateway_server; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
-    location /installer/ { proxy_pass http://installer:5001/; }
+    location /installer/ { proxy_pass http://installer_server/; }
 }
 EOF
         cat > "$OVERRIDE_FILE" <<EOF
@@ -154,6 +179,7 @@ EOF
 # Nginx configuration for HTTP (Auto-generated)
 upstream frontend_server { server frontend:3000; }
 upstream gateway_server { server gateway:8808; }
+upstream installer_server { server installer:5001; }
 server {
     listen 80; server_name ${PUBLIC_DOMAIN_OR_IP};
     location = /api/config { alias /etc/nginx/conf.d/frontend_config.json; add_header Content-Type application/json; }
@@ -161,7 +187,7 @@ server {
     location /core/ { proxy_pass http://gateway_server; proxy_set_header Host \$host; }
     location /agentrtc/ { proxy_pass http://gateway_server; proxy_set_header Host \$host; }
     location /agentws/ { proxy_pass http://gateway_server; proxy_set_header Host \$host; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "Upgrade"; }
-    location /installer/ { proxy_pass http://installer:5001/; }
+    location /installer/ { proxy_pass http://installer_server/; }
 }
 EOF
         cat > "$OVERRIDE_FILE" <<EOF
@@ -208,13 +234,10 @@ INITIAL_ADMIN_LAST_NAME_ENV=${SCRIPT_INITIAL_ADMIN_LAST_NAME:-User}
 read -rp "Enter initial admin organization name [Default Organization]: " SCRIPT_INITIAL_ADMIN_ORG_NAME
 INITIAL_ADMIN_ORG_NAME_ENV=${SCRIPT_INITIAL_ADMIN_ORG_NAME:-Default Organization}
 
-# For app.setup.initial-admin.enabled, it defaults to 'true' as per Spring Boot config.
-# We'll explicitly set it in .env for clarity.
 INITIAL_ADMIN_ENABLED_ENV="true"
 
 echo "✍️  Generating environment files..."
 
-# Generate the static JSON config file that Nginx will serve.
 cat > "$NGINX_FRONTEND_CONFIG_JSON" <<EOF
 {
     "NEXT_PUBLIC_FLASK_API_URL": "${PUBLIC_URL}/installer",
@@ -227,23 +250,16 @@ cat > "$NGINX_FRONTEND_CONFIG_JSON" <<EOF
 EOF
 echo "   ✅ Frontend static config JSON generated."
 
-# Generate main .env file
 cat > "$ENV_FILE" <<EOF
 # Taskbot Production Environment Configuration (Auto-generated)
-
-# === Core Application Settings ================================================
 ACTIVE_PROFILE=prod
 LOG_LEVEL=INFO
 SERVER_PORT=18902
 RUNNING_ON_CLUSTER=false
-
-# === Endpoints & Public Domain ================================================
 PUBLIC_DOMAIN=${PUBLIC_URL}
 DATA_API_ENDPOINT=http://gateway:8808
 CORE_API_ENDPOINT=http://taskbot-api-service:18902
 FRONT_ENDPOINT=${PUBLIC_URL}
-
-# === Database (MariaDB) =======================================================
 JDBC_URL=jdbc:mariadb://mariadb:3306/nucleus?zeroDateTimeBehavior=convertToNull&allowMultiQueries=true&useSSL=false&serverTimezone=UTC
 JDBC_USR=taskbot_user
 JDBC_PWD=${JDBC_PASSWORD}
@@ -266,46 +282,26 @@ AGENT_COMMANDS_EXCHANGE=agent_commands_direct_exchange
 JWT_BASE64_SECRET=${JWT_SECRET}
 JWT_SECRET=${JWT_SECRET}
 GOOGLE_OAUTH_ENABLED=false
-
-# === Cloud & Email Services ===================================================
-# aws.s3.enabled=false # This line seems duplicated below, ensure one is correct
-
-# === Initial Admin Setup (for taskbot-api-service) ============================
 INITIAL_ADMIN_ENABLED=${INITIAL_ADMIN_ENABLED_ENV}
 INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL_ENV}
 INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD_ENV}
 INITIAL_ADMIN_FIRST_NAME=${INITIAL_ADMIN_FIRST_NAME_ENV}
 INITIAL_ADMIN_LAST_NAME=${INITIAL_ADMIN_LAST_NAME_ENV}
 INITIAL_ADMIN_ORG_NAME=${INITIAL_ADMIN_ORG_NAME_ENV}
-
-# === Cloud & Email Services ===================================================
 aws.s3.enabled=false
-
-# === Local Storage (For Docker) ===============================================
 storage.local.path=/storage/uploads
-
-# === Branding =================================================================
 company.name=Nucleus AI
 email.logo.url=${PUBLIC_URL}/images/logo.png
 email.branding.image.url=${PUBLIC_URL}/images/headerbg.png
 website.link=${PUBLIC_URL}
-
-# === Other service variables needed by docker-compose.yml =====================
 TASKBOT_DEPLOY_MODE=ONPREMISE
 FLASK_RUN_PORT=5001
 CORS_ORIGINS=${PUBLIC_URL}
-CORE_API_ENDPOINT=http://taskbot-api-service:18902
-DATA_API_ENDPOINT=http://gateway:8808
 EOF
 echo "   ✅ Main .env file generated."
 
-# --- Generate .env.frontend file (for the Next.js service) ---
-# We generate this file to prevent a warning from Docker Compose,
-# even though our Nginx Intercept strategy makes its contents irrelevant.
 cat > ".env.frontend" <<EOF
-# Taskbot Frontend Environment Configuration (.env.frontend)
-# This file is generated to satisfy the docker-compose.yml 'env_file' directive.
-# The actual configuration is served statically by Nginx via frontend_config.json.
+# This file is generated to satisfy docker-compose.yml. Config is served by Nginx.
 NODE_ENV=production
 NEXT_PUBLIC_DEPLOY_MODE=ONPREMISE
 NEXT_PUBLIC_FRONTEND_URL=${PUBLIC_URL}
@@ -316,7 +312,6 @@ NEXT_PUBLIC_GOOGLE_CLIENT_ID=disabled
 EOF
 echo "   ✅ Frontend .env.frontend file generated."
 
-# Generate .env.gateway file
 cat > "$GATEWAY_ENV_FILE" <<EOF
 # Gateway Service Environment Configuration (Auto-generated)
 REDIS_HOST=redis
@@ -331,10 +326,9 @@ echo "   ✅ Gateway .env.gateway file generated."
 # 6. Manage Docker Stack & Final Summary
 # ─────────────────────────────────────────────────────────────────────────────
 echo "🔄 Managing Docker stack..."
-if [ -n "$(docker compose ps -q 2>/dev/null)" ]; then
-  echo "ℹ️  Existing containers found. Stopping and removing them..."
-  docker compose down --remove-orphans || echo "⚠️  Failed to stop/remove existing containers. Proceeding anyway."
-fi
+# The cleanup at the start of the script ensures no old containers are running.
+# We can still run 'down' here as a safety net in case of a partial failure.
+docker compose down --remove-orphans >/dev/null 2>&1 || true
 
 echo "🚀 Pulling latest specified Docker images (this may take a while)..."
 docker compose pull || echo "⚠️  Failed to pull some images. Proceeding with local versions if available."
@@ -354,6 +348,9 @@ echo ""
 echo "🔗 Access your portal at: ${PUBLIC_URL}"
 echo ""
 echo "ℹ️  To view logs: cd ${INSTALL_DIR} && docker compose logs -f"
-echo "🔐 Your auto-generated service passwords have been saved in the .env file."
+echo "ℹ️  To stop the services: cd ${INSTALL_DIR} && docker compose down"
+echo "ℹ️  To restart the services: cd ${INSTALL_DIR} && docker compose up -d"
+echo ""
+echo "🔐 Your auto-generated service passwords have been saved in the .env file inside ${INSTALL_DIR}."
 echo ""
 echo "Script finished."
