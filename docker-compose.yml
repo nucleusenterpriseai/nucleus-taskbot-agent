@@ -28,6 +28,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS}
     ports:
       - "127.0.0.1:5001:5001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"      
     volumes:
       - installer-data:/data
       - ./keys:/etc/taskbot/keys:ro
