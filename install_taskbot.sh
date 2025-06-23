@@ -303,6 +303,15 @@ CORS_ORIGINS=${PUBLIC_URL}
 EOF
 echo "   ✅ Main .env file generated."
 
+echo "✍️  Generating .env.installer for the installer service..."
+cat > ".env.installer" <<EOF
+# Environment variables for the installer service (Auto-generated)
+# Defines the public-facing API endpoints of the Control Plane for remote worker configuration
+CORE_API_ENDPOINT=${PUBLIC_URL}/core
+DATA_API_ENDPOINT=${PUBLIC_URL}/data
+EOF
+echo "   ✅ .env.installer file generated."
+
 cat > ".env.frontend" <<EOF
 # This file is generated to satisfy docker-compose.yml. Config is served by Nginx.
 NODE_ENV=production
