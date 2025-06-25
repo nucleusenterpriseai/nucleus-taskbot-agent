@@ -205,6 +205,29 @@ EOF
     echo "   ✅ Nginx configuration and override file generated."
 fi
 
+
+echo ""
+echo "------------------------------------------------------------------"
+echo "🔥 IMPORTANT: Network & Firewall Configuration"
+echo "------------------------------------------------------------------"
+echo "For remote Taskbot workers to function, they must be able to connect"
+echo "back to the services running on this host (${PUBLIC_DOMAIN_OR_IP})."
+echo ""
+echo "➡️  ACTION REQUIRED: You must configure this host's firewall to"
+echo "   allow INBOUND traffic from your worker VMs on the following TCP ports:"
+echo ""
+echo "   • Port 27017:  For MongoDB connection."
+echo "   • Port 5672:   For RabbitMQ connection."
+echo ""
+echo "This might involve changing firewall rules on the host itself (like ufw),"
+echo "a cloud provider's network settings (like a Security Group), or a"
+echo "hardware firewall."
+echo ""
+echo "Failure to open these ports will prevent remote Taskbots from working."
+echo "------------------------------------------------------------------"
+read -rp "Press [Enter] to acknowledge that you have read and understood these firewall requirements."
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 5. Configure Service Credentials & Initial Admin User
 # ─────────────────────────────────────────────────────────────────────────────
@@ -306,9 +329,35 @@ echo "   ✅ Main .env file generated."
 echo "✍️  Generating .env.installer for the installer service..."
 cat > ".env.installer" <<EOF
 # Environment variables for the installer service (Auto-generated)
-# Defines the public-facing API endpoints of the Control Plane for remote worker configuration
+# This configuration is passed to remote Taskbot containers.
+
+# --- Public API Endpoints ---
 CORE_API_ENDPOINT=${PUBLIC_URL}/core
 DATA_API_ENDPOINT=${PUBLIC_URL}/data
+
+# --- MongoDB Configuration ---
+# For remote workers, this MUST use the public IP of the host running the database.
+MONGODB_URI=mongodb://mymongo:${MONGO_PASSWORD}@${PUBLIC_DOMAIN_OR_IP}:27017
+
+# --- RabbitMQ Configuration ---
+# For remote workers, this MUST use the public IP of the host running RabbitMQ.
+MQ_HOST=${PUBLIC_DOMAIN_OR_IP}
+MQ_PORT=5672
+MQ_USER=rbuser
+MQ_PASSWORD=${RABBITMQ_PASSWORD}
+
+# --- SMTP (Email) Configuration ---
+# These values must be accessible from the remote worker VMs.
+SMTP_SERVER=your_smtp_server.com
+SMTP_PORT=587
+SMTP_USER=your_smtp_user
+SMTP_PASSWORD=your_smtp_password
+
+# --- AI Server IP (for on-premise) ---
+# This points to the machine where the GPU-enabled segment-service will run.
+# In a multi-VM setup, this might be a different IP.
+# For now, we assume it's the same as the main host.
+AI_SERVER_IP=${PUBLIC_DOMAIN_OR_IP}
 EOF
 echo "   ✅ .env.installer file generated."
 

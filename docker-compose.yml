@@ -119,11 +119,14 @@ services:
       RABBITMQ_DEFAULT_USER: "${RABBITMQ_USERNAME}"
       RABBITMQ_DEFAULT_PASS: "${RABBITMQ_PASSWORD}"
     ports:
-      - "15672:15672" # Management UI
+      - "5672:5672"
+      - "15672:15672"
 
   mongodb:
     image: mongo:4.4
     container_name: taskbot-mongodb
+    ports:
+      - "27017:27017"    
     restart: unless-stopped
     environment:
       # Use the new credentials from the .env file
