@@ -332,8 +332,8 @@ cat > ".env.installer" <<EOF
 # This configuration is passed to remote Taskbot containers.
 
 # --- Public API Endpoints ---
-CORE_API_ENDPOINT=${PUBLIC_URL}/core
-DATA_API_ENDPOINT=${PUBLIC_URL}/data
+CORE_API_ENDPOINT=${PUBLIC_URL}
+DATA_API_ENDPOINT=${PUBLIC_URL}
 
 # --- MongoDB Configuration ---
 # For remote workers, this MUST use the public IP of the host running the database.

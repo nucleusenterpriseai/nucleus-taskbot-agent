@@ -21,7 +21,7 @@ services:
     image: neaitaskbot/taskbot-installer:1.0
     container_name: taskbot-installer
     env_file:
-      - .env.installer # Added .env.installer
+      - .env.installer
     environment:
       TASKBOT_DEPLOY_MODE: ${TASKBOT_DEPLOY_MODE:-ONPREMISE}
       FLASK_RUN_PORT: ${FLASK_RUN_PORT:-5000}
